@@ -5,7 +5,7 @@ export const BACKEND_URL =
   "https://umbrellalike-multiseriate-cythia.ngrok-free.dev";
 
 const api = axios.create({
-  baseURL: `${BACKEND_URL}/api`,
+  baseURL: `${BACKEND_URL},
   headers: {
     "ngrok-skip-browser-warning": "69420", // 기본 헤더 설정
     "Content-Type": "application/json",
