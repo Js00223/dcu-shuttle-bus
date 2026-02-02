@@ -14,13 +14,33 @@ models.Base.metadata.create_all(bind=engine)
 
 app = FastAPI()
 
-# --- [1. CORS 설정] ---
+# --- [1. CORS & OPTIONS 설정] ---
+# ngrok 경고 및 브라우저 Preflight 문제를 방지하기 위한 미들웨어
+@app.middleware("http")
+async def add_cors_and_options_handler(request: Request, call_next):
+    if request.method == "OPTIONS":
+        return Response(
+            status_code=200,
+            headers={
+                "Access-Control-Allow-Origin": "*",
+                "Access-Control-Allow-Methods": "*",
+                "Access-Control-Allow-Headers": "*",
+                "Access-Control-Allow-Credentials": "true",
+            },
+        )
+    response = await call_next(request)
+    response.headers["Access-Control-Allow-Origin"] = "*"
+    response.headers["Access-Control-Allow-Methods"] = "*"
+    response.headers["Access-Control-Allow-Headers"] = "*"
+    return response
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["https://dcu-shuttle-bus.vercel.app"],
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["*"]
 )
 
 # --- [2. 공통 설정 및 DTO 정의] ---
@@ -31,7 +51,7 @@ def get_db():
     finally:
         db.close()
 
-# SignupRequest 모델 정의는 유지하되, signup 함수 파라미터에서는 제거합니다.
+# JSON Body를 받기 위한 데이터 모델 (DTO)
 class SignupRequest(BaseModel):
     email: str
     code: str
@@ -45,23 +65,14 @@ class LoginRequest(BaseModel):
 class ChargeRequest(BaseModel):
     amount: int
 
+class PhoneUpdateRequest(BaseModel):
+    phone: str
+
 pending_payments = {}
 BANKS = ["대구은행", "신한은행", "국민은행", "우리은행", "카카오뱅크"]
 verification_codes = {}
 
-# --- [3. 에러 핸들러 및 인증 API] ---
-
-@app.exception_handler(RequestValidationError)
-async def validation_exception_handler(request: Request, exc: RequestValidationError):
-    print(f"❌ 데이터 검증 에러 발생: {exc.errors()}")
-    return JSONResponse(
-        status_code=422,
-        content={
-            "status": "error",
-            "message": "데이터 형식이 맞지 않습니다.",
-            "detail": exc.errors()
-        }
-    )
+# --- [3. 기본 경로 및 인증 API] ---
 
 @app.get("/")
 def read_root():
@@ -90,74 +101,39 @@ def send_real_email(receiver_email: str, code: str):
         return False
 
 @app.post("/api/auth/send-code")
-def send_code(email: str):
+def send_code(email: str): # 이 부분은 단순 문자열이므로 쿼리 파라미터로 유지하거나 Body로 변경 가능
     if not is_cu_email(email):
         raise HTTPException(status_code=400, detail="대학교 메일만 사용 가능합니다.")
     code = str(random.randint(100000, 999999))
     verification_codes[email] = code
-    print(f"인증번호 생성: {email} -> {code}")
     if send_real_email(email, code):
         return {"status": "success", "message": "인증번호 발송 완료"}
     return {"status": "error", "message": "발송 실패"}
 
-# [완전 수정] SignupRequest 흔적을 지우고 Request 객체로 직접 수신
+# [핵심 수정] SignupRequest 모델을 사용하여 JSON Body를 받음
 @app.post("/api/auth/signup")
-async def signup(request: Request, db: Session = Depends(get_db)):
-    try:
-        # 1. JSON 데이터를 원시(Raw) 형태로 강제 추출
-        body = await request.json()
-        print(f"📥 [DEBUG] 서버 수신 데이터: {body}")
-
-        # 2. 데이터 추출 (딕셔너리 형태)
-        email = body.get("email")
-        code = body.get("code")
-        password = body.get("password")
-        name = body.get("name")
-
-        # 3. 누락 데이터 체크
-        if not all([email, code, password, name]):
-            print(f"❌ 데이터 누락됨: email={email}, code={code}, name={name}")
-            return JSONResponse(
-                status_code=422,
-                content={"detail": "모든 항목을 입력해주세요."}
-            )
-
-        # 4. 인증번호 검증
-        saved_code = verification_codes.get(email)
-        if not saved_code or str(saved_code) != str(code):
-            print(f"❌ 인증 실패: {email} (입력:{code} / 저장:{saved_code})")
-            raise HTTPException(status_code=400, detail="인증번호가 틀렸거나 만료되었습니다.")
+def signup(data: SignupRequest, db: Session = Depends(get_db)):
+    # 1. 인증번호 검증
+    if verification_codes.get(data.email) != data.code:
+        raise HTTPException(status_code=400, detail="인증번호 불일치")
+    
+    # 2. 유저 생성
+    new_user = models.User(
+        email=data.email, 
+        hashed_password=data.password, 
+        name=data.name, 
+        points=0
+    )
+    db.add(new_user)
+    db.commit()
+    
+    # 인증 완료 후 코드 삭제
+    if data.email in verification_codes:
+        del verification_codes[data.email]
         
-        # 5. 중복 가입 체크
-        existing_user = db.query(models.User).filter(models.User.email == email).first()
-        if existing_user:
-            raise HTTPException(status_code=400, detail="이미 가입된 메일입니다.")
-            
-        # 6. 유저 생성 및 저장
-        new_user = models.User(
-            email=email, 
-            hashed_password=password, 
-            name=name, 
-            points=0
-        )
-        db.add(new_user)
-        db.commit()
-        
-        if email in verification_codes:
-            del verification_codes[email]
-            
-        print(f"✅ 회원가입 성공: {email}")
-        return {"status": "success", "message": "회원가입 성공"}
+    return {"status": "success"}
 
-    except Exception as e:
-        db.rollback()
-        print(f"💥 서버 내부 에러: {traceback.format_exc()}")
-        if isinstance(e, HTTPException): raise e
-        return JSONResponse(
-            status_code=500, 
-            content={"detail": f"서버 처리 중 오류가 발생했습니다: {str(e)}"}
-        )
-
+# [핵심 수정] LoginRequest 모델을 사용하여 JSON Body를 받음
 @app.post("/api/auth/login")
 def login(data: LoginRequest, db: Session = Depends(get_db)):
     user = db.query(models.User).filter(models.User.email == data.email).first()
@@ -206,6 +182,7 @@ def confirm_charge(payment_id: str, db: Session = Depends(get_db)):
     del pending_payments[payment_id]
     return {"status": "success", "new_points": user.points}
 
+# --- [5. 버스 트래킹 및 예약 API] ---
 @app.get("/api/routes")
 def get_routes(db: Session = Depends(get_db)):
     return db.query(models.BusRoute).all()
@@ -213,21 +190,37 @@ def get_routes(db: Session = Depends(get_db)):
 @app.get("/api/bus/track/{route_id}")
 def track_bus(route_id: int, user_lat: float, user_lng: float, db: Session = Depends(get_db)):
     bus = db.query(models.BusRoute).filter(models.BusRoute.id == route_id).first()
+    
     if not bus:
         raise HTTPException(status_code=404, detail="해당 노선 없음")
-    lat = bus.current_lat if bus.current_lat else 35.85
-    lng = bus.current_lng if bus.current_lng else 128.56
+    
+    if bus.current_lat is None or bus.current_lng is None:
+        return {
+            "route_name": bus.route_name,
+            "bus_location": {"lat": 35.85, "lng": 128.56},
+            "eta": 0
+        }
+    
     try:
-        eta_info = utils.calculate_eta(user_lat, user_lng, lat, lng)
-        return {"route_name": bus.route_name, "bus_location": {"lat": lat, "lng": lng}, "eta": eta_info["eta_minutes"]}
-    except:
-        return {"route_name": bus.route_name, "bus_location": {"lat": lat, "lng": lng}, "eta": 0}
+        eta_info = utils.calculate_eta(user_lat, user_lng, bus.current_lat, bus.current_lng)
+        return {
+            "route_name": bus.route_name,
+            "bus_location": {"lat": bus.current_lat, "lng": bus.current_lng},
+            "eta": eta_info["eta_minutes"]
+        }
+    except Exception:
+        return {
+            "route_name": bus.route_name,
+            "bus_location": {"lat": bus.current_lat, "lng": bus.current_lng},
+            "eta": 0
+        }
 
 @app.post("/api/bookings/reserve")
 def reserve_bus(route_id: int, user_id: int = 1, db: Session = Depends(get_db)):
     user = db.query(models.User).filter(models.User.id == user_id).first()
     if not user: raise HTTPException(status_code=404, detail="유저 없음")
     if user.points < 3000: raise HTTPException(status_code=400, detail="포인트 부족")
+    
     user.points -= 3000
     new_booking = models.Booking(user_id=user_id, route_id=route_id, booked_at=datetime.datetime.now())
     db.add(new_booking)
