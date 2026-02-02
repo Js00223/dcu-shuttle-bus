@@ -7,6 +7,7 @@ from pydantic import BaseModel
 from email.mime.text import MIMEText
 import models, utils, datetime, database, random, smtplib, time, traceback
 from database import SessionLocal, engine
+from fastapi.exceptions import RequestValidationError # 추가됨
 
 # 데이터베이스 테이블 생성
 models.Base.metadata.create_all(bind=engine)
@@ -73,7 +74,19 @@ pending_payments = {}
 BANKS = ["대구은행", "신한은행", "국민은행", "우리은행", "카카오뱅크"]
 verification_codes = {}
 
-# --- [3. 인증 API (Body 방식 적용)] ---
+# --- [3. 에러 핸들러 및 인증 API] ---
+
+# 422 Unprocessable Content 에러의 원인을 터미널에 상세히 출력해주는 핸들러
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    print(f"❌ 데이터 검증 에러 발생: {exc.errors()}")
+    # 에러 내용을 프론트엔드에게도 상세히 전달
+    return Response(
+        content=f'{{"status": "error", "message": "데이터 형식이 맞지 않습니다.", "detail": {exc.errors()}}}',
+        status_code=422,
+        media_type="application/json"
+    )
+
 @app.get("/")
 def read_root():
     return {"status": "online", "message": "DCU Shuttle API Server"}
@@ -101,7 +114,7 @@ def send_real_email(receiver_email: str, code: str):
         return False
 
 @app.post("/api/auth/send-code")
-def send_code(email: str): # 이메일은 단순 Query로 유지해도 무방합니다.
+def send_code(email: str):
     if not is_cu_email(email):
         raise HTTPException(status_code=400, detail="대학교 메일만 사용 가능합니다.")
     code = str(random.randint(100000, 999999))
@@ -133,7 +146,7 @@ def signup(data: SignupRequest, db: Session = Depends(get_db)):
         if data.email in verification_codes:
             del verification_codes[data.email]
             
-        print(f"회원가입 성공: {data.email}")
+        print(f"✅ 회원가입 성공: {data.email}")
         return {"status": "success"}
     except HTTPException:
         raise
