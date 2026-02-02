@@ -73,7 +73,30 @@ export const Signup = () => {
     name: name.trim()
   }),
 });
+const handleSubmit = async (e: React.FormEvent) => {
+  e.preventDefault();
+  
+  const signupData = {
+    email: String(email).trim(),
+    code: String(code).trim(),
+    password: String(password),
+    name: String(name).trim()
+  };
 
+  try {
+    // 61번 줄 근처: 변수 선언
+    const url = `${API_BASE_URL}/api/auth/signup`;
+    
+    // fetch에 'url' 변수를 사용함 (에러 해결)
+    const response = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Accept": "application/json",
+        "Content-Type": "application/json",
+        "ngrok-skip-browser-warning": "69420",
+      },
+      body: JSON.stringify(signupData),
+    });
       const result = await response.json();
 
       if (response.ok) {
