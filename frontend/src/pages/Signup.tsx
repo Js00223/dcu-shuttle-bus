@@ -9,10 +9,10 @@ export const Signup = () => {
   const [code, setCode] = useState("");
   const [isSent, setIsSent] = useState(false);
 
-  // 환경 변수 확인
+  // 환경 변수 확인 (Vercel 설정 확인 필요)
   const API_BASE_URL = import.meta.env.VITE_API_URL || "";
 
-  // 1. 인증번호 발송
+  // 1. 인증번호 발송 함수
   const handleSendCode = async () => {
     if (!email.endsWith("@cu.ac.kr")) {
       alert("학교 메일(@cu.ac.kr)만 사용 가능합니다.");
@@ -42,72 +42,43 @@ export const Signup = () => {
     }
   };
 
-  // 2. 회원가입 제출 (Body 전송 방식 최적화)
+  // 2. 회원가입 제출 함수
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    // 전송할 데이터 객체 (String 대문자 수정 및 검증)
+    // 전송 데이터 객체 생성 및 공백 제거
     const signupData = {
-      email: String(email).trim(),
-      code: String(code).trim(),
-      password: String(password),
-      name: String(name).trim()
+      email: email.trim(),
+      code: code.trim(),
+      password: password,
+      name: name.trim()
     };
 
-    // [디버깅] 전송 직전 콘솔 확인 (값이 비어있는지 꼭 보세요!)
     console.log("📤 서버로 전송할 데이터:", signupData);
     
     try {
       const url = `${API_BASE_URL}/api/auth/signup`;
       
-      const response = await fetch(`${API_BASE_URL}/api/auth/signup`, {
-  method: "POST",
-  headers: {
-    "Content-Type": "application/json", // 이 헤더가 필수입니다!
-    "ngrok-skip-browser-warning": "69420",
-  },
-  body: JSON.stringify({
-    email: email.trim(),
-    code: code.trim(),
-    password: password,
-    name: name.trim()
-  }),
-});
-const handleSubmit = async (e: React.FormEvent) => {
-  e.preventDefault();
-  
-  const signupData = {
-    email: String(email).trim(),
-    code: String(code).trim(),
-    password: String(password),
-    name: String(name).trim()
-  };
+      const response = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Accept": "application/json",
+          "Content-Type": "application/json",
+          "ngrok-skip-browser-warning": "69420",
+        },
+        body: JSON.stringify(signupData),
+      });
 
-  try {
-    // 61번 줄 근처: 변수 선언
-    const url = `${API_BASE_URL}/api/auth/signup`;
-    
-    // fetch에 'url' 변수를 사용함 (에러 해결)
-    const response = await fetch(url, {
-      method: "POST",
-      headers: {
-        "Accept": "application/json",
-        "Content-Type": "application/json",
-        "ngrok-skip-browser-warning": "69420",
-      },
-      body: JSON.stringify(signupData),
-    });
       const result = await response.json();
 
       if (response.ok) {
         alert("🎉 회원가입 성공! 로그인 페이지로 이동합니다.");
         navigate("/login");
       } else {
-        // 422 에러 시 상세 이유를 콘솔에 출력
         console.error("❌ 서버 응답 에러 상세:", result);
         
-        // 에러 메시지 가독성 처리
         let errorMsg = "정보를 다시 확인해주세요.";
+        // FastAPI의 422 에러(배열 형태)를 읽기 쉽게 변환
         if (result.detail && Array.isArray(result.detail)) {
           errorMsg = result.detail.map((err: any) => `${err.loc[1]}: ${err.msg}`).join("\n");
         } else if (typeof result.detail === 'string') {
@@ -127,6 +98,7 @@ const handleSubmit = async (e: React.FormEvent) => {
       <div className="bg-white w-full max-w-md p-8 rounded-[2.5rem] shadow-xl">
         <h2 className="text-3xl font-black mb-6 text-gray-900">회원가입</h2>
         <form onSubmit={handleSubmit} className="space-y-4">
+          {/* 이름 입력 */}
           <input
             type="text"
             placeholder="이름"
@@ -135,6 +107,8 @@ const handleSubmit = async (e: React.FormEvent) => {
             onChange={(e) => setName(e.target.value)}
             required
           />
+          
+          {/* 이메일 입력 및 인증 버튼 */}
           <div className="flex gap-2">
             <input
               type="email"
@@ -152,6 +126,8 @@ const handleSubmit = async (e: React.FormEvent) => {
               인증
             </button>
           </div>
+
+          {/* 인증번호 입력창 (발송 후에만 표시) */}
           {isSent && (
             <input
               type="text"
@@ -162,6 +138,8 @@ const handleSubmit = async (e: React.FormEvent) => {
               required
             />
           )}
+
+          {/* 비밀번호 입력 */}
           <input
             type="password"
             placeholder="비밀번호"
@@ -170,6 +148,8 @@ const handleSubmit = async (e: React.FormEvent) => {
             onChange={(e) => setPassword(e.target.value)}
             required
           />
+
+          {/* 제출 버튼 */}
           <button
             type="submit"
             className="w-full bg-blue-600 hover:bg-blue-700 text-white p-4 rounded-2xl font-black text-lg mt-4 shadow-lg shadow-blue-200 transition-all active:scale-95"
