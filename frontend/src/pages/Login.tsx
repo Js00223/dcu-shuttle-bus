@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
+import api from "../api"; // 1. 우리가 만든 api 설정을 가져옵니다. (경로 확인 필요)
 
 export const Login = () => {
   const navigate = useNavigate();
@@ -9,45 +10,37 @@ export const Login = () => {
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      const response = await fetch(
-        `https://umbrellalike-multiseriate-cythia.ngrok-free.dev/apimultiseriate-cyteia.ngrlk-free.dev/apimultiseriate-cythia.ngrok-free.dev/api/auth/login?email=${email}&password=${password}`,
-        {
-          method: "POST",
-        },
-      );
+      // 2. api 인스턴스를 사용해 깔끔하게 호출합니다.
+      // 주소를 길게 적을 필요 없이 baseURL 뒤의 경로만 적으면 됩니다.
+      const response = await api.post("/api/auth/login", {
+        email: email,
+        password: password,
+      });
 
-      if (response.ok) {
-        const userData = await response.json();
+      // axios는 응답이 성공(200번대)하면 바로 여기로 옵니다.
+      const userData = response.data;
 
-        // [수정 핵심] 서버에서 온 데이터(토큰 등)를 'token'이라는 이름으로 저장합니다.
-        // 만약 서버가 userData.access_token 형태로 준다면 아래처럼 수정하세요.
-        // const token = userData.access_token || userData.token || "temp-token";
+      // 3. 데이터 저장 (토큰 및 유저 정보)
+      const tokenValue = userData.token || userData.access_token || "login_success_token";
+      localStorage.setItem("token", tokenValue);
+      localStorage.setItem("user", JSON.stringify(userData));
 
-        // 현재는 서버 응답 전체를 활용해 token과 user 정보를 모두 저장해 동기화를 맞춥니다.
-        const tokenValue =
-          userData.token || userData.access_token || "login_success_token";
-
-        localStorage.setItem("token", tokenValue); // Favorites, PointAndPass에서 사용
-        localStorage.setItem("user", JSON.stringify(userData)); // App.tsx 및 UI용
-
-        // 추가로 마이페이지 동기화를 위해 필요한 정보가 있다면 미리 저장
-        if (userData.points !== undefined)
-          localStorage.setItem("points", userData.points);
-
-        alert(`${userData.name || "사용자"}님, 환영합니다!`);
-
-        // 로그인 성공 후 홈으로 이동 (이제 App.tsx의 PrivateRoute를 통과하게 됩니다)
-        navigate("/");
-        window.location.reload(); // 하단바 상태를 즉시 갱신하기 위해 새로고침 권장
-      } else {
-        const errorData = await response.json();
-        alert(errorData.detail || "로그인에 실패했습니다.");
+      if (userData.points !== undefined) {
+        localStorage.setItem("points", userData.points.toString());
       }
-    } catch (err) {
-      console.error("로그인 네트워크 오류:", err);
-      alert(
-        "서버와 연결할 수 없습니다. 백엔드 서버가 켜져 있는지 확인해 주세요.",
-      );
+
+      alert(`${userData.name || "사용자"}님, 환영합니다!`);
+
+      // 4. 페이지 이동 및 갱신
+      navigate("/");
+      window.location.reload();
+
+    } catch (err: any) {
+      console.error("로그인 에러:", err);
+      
+      // 서버에서 보낸 에러 메시지가 있다면 보여주고, 없으면 기본 메시지 출력
+      const errorMessage = err.response?.data?.detail || "로그인 정보가 올바르지 않거나 서버 오류가 발생했습니다.";
+      alert(errorMessage);
     }
   };
 
