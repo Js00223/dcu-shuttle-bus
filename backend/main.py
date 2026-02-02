@@ -15,7 +15,6 @@ models.Base.metadata.create_all(bind=engine)
 app = FastAPI()
 
 # --- [1. CORS & OPTIONS 설정] ---
-# ngrok 경고 및 브라우저 Preflight 문제를 방지하기 위한 미들웨어
 @app.middleware("http")
 async def add_cors_and_options_handler(request: Request, call_next):
     if request.method == "OPTIONS":
@@ -51,7 +50,6 @@ def get_db():
     finally:
         db.close()
 
-# JSON Body를 받기 위한 데이터 모델 (DTO)
 class SignupRequest(BaseModel):
     email: str
     code: str
@@ -101,18 +99,19 @@ def send_real_email(receiver_email: str, code: str):
         return False
 
 @app.post("/api/auth/send-code")
-def send_code(email: str): # 이 부분은 단순 문자열이므로 쿼리 파라미터로 유지하거나 Body로 변경 가능
+def send_code(email: str):
     if not is_cu_email(email):
         raise HTTPException(status_code=400, detail="대학교 메일만 사용 가능합니다.")
     code = str(random.randint(100000, 999999))
     verification_codes[email] = code
+    print(f"인증번호 생성: {email} -> {code}")
     if send_real_email(email, code):
         return {"status": "success", "message": "인증번호 발송 완료"}
     return {"status": "error", "message": "발송 실패"}
 
-# [핵심 수정] SignupRequest 모델을 사용하여 JSON Body를 받음
+# [핵심 수정] Body(...)를 명시하여 쿼리 파라미터가 아닌 JSON Body로 인식하게 함
 @app.post("/api/auth/signup")
-def signup(data: SignupRequest, db: Session = Depends(get_db)):
+def signup(data: SignupRequest = Body(...), db: Session = Depends(get_db)):
     # 1. 인증번호 검증
     if verification_codes.get(data.email) != data.code:
         raise HTTPException(status_code=400, detail="인증번호 불일치")
@@ -127,15 +126,14 @@ def signup(data: SignupRequest, db: Session = Depends(get_db)):
     db.add(new_user)
     db.commit()
     
-    # 인증 완료 후 코드 삭제
     if data.email in verification_codes:
         del verification_codes[data.email]
         
     return {"status": "success"}
 
-# [핵심 수정] LoginRequest 모델을 사용하여 JSON Body를 받음
+# [핵심 수정] 로그인도 Body로 수신하도록 수정
 @app.post("/api/auth/login")
-def login(data: LoginRequest, db: Session = Depends(get_db)):
+def login(data: LoginRequest = Body(...), db: Session = Depends(get_db)):
     user = db.query(models.User).filter(models.User.email == data.email).first()
     if not user or user.hashed_password != data.password:
         raise HTTPException(status_code=401, detail="로그인 정보 오류")
@@ -159,7 +157,7 @@ def get_user_status(user_id: int = 1, db: Session = Depends(get_db)):
     }
 
 @app.post("/api/charge/request")
-def request_charge(request: ChargeRequest, user_id: int = 1):
+def request_charge(request: ChargeRequest = Body(...), user_id: int = 1):
     payment_id = f"PAY-{random.randint(1000, 9999)}"
     expire_at = datetime.datetime.now() + datetime.timedelta(minutes=3)
     bank_info = f"{random.choice(BANKS)} {random.randint(100,999)}-{random.randint(10,99)}-{random.randint(1000,9999)}"
@@ -190,28 +188,23 @@ def get_routes(db: Session = Depends(get_db)):
 @app.get("/api/bus/track/{route_id}")
 def track_bus(route_id: int, user_lat: float, user_lng: float, db: Session = Depends(get_db)):
     bus = db.query(models.BusRoute).filter(models.BusRoute.id == route_id).first()
-    
     if not bus:
         raise HTTPException(status_code=404, detail="해당 노선 없음")
     
-    if bus.current_lat is None or bus.current_lng is None:
-        return {
-            "route_name": bus.route_name,
-            "bus_location": {"lat": 35.85, "lng": 128.56},
-            "eta": 0
-        }
+    lat = bus.current_lat if bus.current_lat else 35.85
+    lng = bus.current_lng if bus.current_lng else 128.56
     
     try:
-        eta_info = utils.calculate_eta(user_lat, user_lng, bus.current_lat, bus.current_lng)
+        eta_info = utils.calculate_eta(user_lat, user_lng, lat, lng)
         return {
             "route_name": bus.route_name,
-            "bus_location": {"lat": bus.current_lat, "lng": bus.current_lng},
+            "bus_location": {"lat": lat, "lng": lng},
             "eta": eta_info["eta_minutes"]
         }
     except Exception:
         return {
             "route_name": bus.route_name,
-            "bus_location": {"lat": bus.current_lat, "lng": bus.current_lng},
+            "bus_location": {"lat": lat, "lng": lng},
             "eta": 0
         }
 
