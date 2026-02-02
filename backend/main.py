@@ -13,11 +13,11 @@ models.Base.metadata.create_all(bind=engine)
 
 app = FastAPI()
 
-# --- [1. CORS & ngrok 설정] ---
-# Vercel(프론트)에서 ngrok(백엔드)으로 요청을 보낼 때 발생하는 보안 차단을 해제합니다.
+# --- [1. CORS 및 ngrok 연동 미들웨어] ---
+# Vercel에서 오는 모든 요청을 허용하고, ngrok 특유의 보안 차단을 우회합니다.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # 실제 서비스 시에는 Vercel 주소만 넣는 것이 안전합니다.
+    allow_origins=["*"], 
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -25,20 +25,27 @@ app.add_middleware(
 )
 
 @app.middleware("http")
-async def add_process_time_header(request: Request, call_next):
-    # ngrok 프리뷰 페이지를 건너뛰기 위한 헤더 추가 및 OPTIONS 처리
+async def add_ngrok_cors_middleware(request: Request, call_next):
+    # 1. 브라우저의 사전 요청(OPTIONS)에 대해 즉시 200 응답 및 헤더 부여
     if request.method == "OPTIONS":
         return Response(status_code=200, headers={
             "Access-Control-Allow-Origin": "*",
             "Access-Control-Allow-Methods": "*",
             "Access-Control-Allow-Headers": "*",
         })
+    
+    # 2. 실제 요청 처리
     response = await call_next(request)
+    
+    # 3. 모든 응답 헤더에 CORS 허용 및 ngrok 경고 무시 헤더 강제 주입
     response.headers["Access-Control-Allow-Origin"] = "*"
-    # ngrok-skip-browser-warning 헤더는 프론트엔드 axios 설정에 추가하는 것이 더 좋습니다.
+    response.headers["Access-Control-Allow-Headers"] = "*"
+    # ngrok 프리뷰 페이지를 우회하도록 응답에도 헤더 설정 (브라우저 정책 대응)
+    response.headers["ngrok-skip-browser-warning"] = "69420"
+    
     return response
 
-# --- [2. 공통 설정 및 DTO] ---
+# --- [2. 데이터 모델] ---
 def get_db():
     db = SessionLocal()
     try:
@@ -59,19 +66,16 @@ class LoginRequest(BaseModel):
 class ChargeRequest(BaseModel):
     amount: int
 
-# 전역 변수 유지
+# 임시 저장소
 verification_codes = {}
 pending_payments = {}
 BANKS = ["대구은행", "신한은행", "국민은행", "우리은행", "카카오뱅크"]
 
-# --- [3. 핵심 인증 API] ---
+# --- [3. 핵심 API 로직] ---
 
 @app.get("/")
 def read_root():
-    return {"status": "online", "message": "DCU Shuttle API Server (Vercel Linked)"}
-
-def is_cu_email(email: str):
-    return email.endswith("@cu.ac.kr")
+    return {"status": "online", "message": "DCU Shuttle API Server"}
 
 def send_real_email(receiver_email: str, code: str):
     smtp_server = "smtp.gmail.com"
@@ -94,7 +98,7 @@ def send_real_email(receiver_email: str, code: str):
 
 @app.post("/api/auth/send-code")
 def send_code(email: str):
-    if not is_cu_email(email):
+    if not email.endswith("@cu.ac.kr"):
         raise HTTPException(status_code=400, detail="대학교 메일만 사용 가능합니다.")
     code = str(random.randint(100000, 999999))
     verification_codes[email] = code
@@ -105,20 +109,20 @@ def send_code(email: str):
 
 @app.post("/api/auth/signup")
 def signup(data: SignupRequest = Body(...), db: Session = Depends(get_db)):
-    print(f"📥 [Vercel Request] 가입 시도: {data.email}")
+    print(f"📥 가입 요청: {data.email}")
     try:
-        # 1. 중복 가입 체크 (IntegrityError 방지)
+        # 1. 중복 이메일 체크 (IntegrityError 방지)
         existing_user = db.query(models.User).filter(models.User.email == data.email).first()
         if existing_user:
-            print(f"⚠️ 가입 거절: 이미 존재하는 이메일 ({data.email})")
-            raise HTTPException(status_code=400, detail="이미 가입된 이메일입니다.")
+            print(f"⚠️ 중복 계정 가입 시도: {data.email}")
+            return JSONResponse(status_code=400, content={"detail": "이미 가입된 이메일입니다."})
 
         # 2. 인증번호 검증
         saved_code = verification_codes.get(data.email)
         if not saved_code or str(saved_code) != str(data.code):
-            raise HTTPException(status_code=400, detail="인증번호가 틀렸거나 만료되었습니다.")
+            return JSONResponse(status_code=400, content={"detail": "인증번호가 틀렸거나 만료되었습니다."})
         
-        # 3. 유저 생성
+        # 3. 유저 저장
         new_user = models.User(
             email=data.email, 
             hashed_password=data.password, 
@@ -131,17 +135,13 @@ def signup(data: SignupRequest = Body(...), db: Session = Depends(get_db)):
         if data.email in verification_codes:
             del verification_codes[data.email]
             
+        print(f"✅ 가입 성공: {data.email}")
         return {"status": "success", "message": "회원가입 완료"}
 
-    except HTTPException as e:
-        raise e
     except Exception as e:
         db.rollback()
-        print(f"💥 서버 에러 상세:\n{traceback.format_exc()}")
-        return JSONResponse(
-            status_code=500, 
-            content={"detail": "서버 내부 오류로 가입에 실패했습니다."}
-        )
+        print(f"💥 서버 에러: {traceback.format_exc()}")
+        return JSONResponse(status_code=500, content={"detail": f"서버 오류: {str(e)}"})
 
 @app.post("/api/auth/login")
 def login(data: LoginRequest = Body(...), db: Session = Depends(get_db)):
@@ -154,43 +154,14 @@ def login(data: LoginRequest = Body(...), db: Session = Depends(get_db)):
         "user": {"id": user.id, "name": user.name, "points": user.points}
     }
 
-# --- [4. 유저 및 예약 API] ---
+# --- [4. 기타 서비스 API] ---
 
 @app.get("/api/user/status")
 def get_user_status(user_id: int = 1, db: Session = Depends(get_db)):
     user = db.query(models.User).filter(models.User.id == user_id).first()
     if not user: raise HTTPException(status_code=404)
-    return {
-        "points": user.points,
-        "name": user.name,
-        "studentId": "20231234",
-        "phone": "010-0000-0000"
-    }
-
-@app.post("/api/charge/request")
-def request_charge(request: ChargeRequest = Body(...), user_id: int = 1):
-    payment_id = f"PAY-{random.randint(1000, 9999)}"
-    expire_at = datetime.datetime.now() + datetime.timedelta(minutes=3)
-    bank_info = f"{random.choice(BANKS)} {random.randint(100,999)}-{random.randint(10,99)}-{random.randint(1000,9999)}"
-    pending_payments[payment_id] = {"amount": request.amount, "user_id": user_id, "expire_at": expire_at}
-    return {
-        "payment_id": payment_id,
-        "amount": request.amount,
-        "account": f"{bank_info} (예금주: DCU셔틀)"
-    }
+    return {"points": user.points, "name": user.name}
 
 @app.get("/api/routes")
 def get_routes(db: Session = Depends(get_db)):
     return db.query(models.BusRoute).all()
-
-@app.post("/api/bookings/reserve")
-def reserve_bus(route_id: int, user_id: int = 1, db: Session = Depends(get_db)):
-    user = db.query(models.User).filter(models.User.id == user_id).first()
-    if not user or user.points < 3000: 
-        raise HTTPException(status_code=400, detail="포인트 부족 또는 유저 없음")
-    
-    user.points -= 3000
-    new_booking = models.Booking(user_id=user_id, route_id=route_id, booked_at=datetime.datetime.now())
-    db.add(new_booking)
-    db.commit()
-    return {"status": "success", "remaining_points": user.points}
