@@ -10,8 +10,8 @@ from sqlalchemy.orm import sessionmaker
 DB_USER = "postgres.aocsrtgjxpdsxhwtxrfd"
 DB_PASS_RAW = "Js00334422@@"          # psycopg2용 원본 비밀번호
 DB_PASS_ENC = "Js00334422%40%40"      # SQLAlchemy URL용 인코딩된 비밀번호
-DB_HOST = "aws-0-ap-northeast-2.pooler.supabase.com"
-DB_PORT = "6543"
+DB_HOST = "db.aocsrtgjxpdsxhwtxrfd.supabase.co"
+DB_PORT = "5432"
 DB_NAME = "postgres"
 
 # 1. SQLAlchemy용 URL 구성
