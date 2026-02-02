@@ -13,19 +13,20 @@ models.Base.metadata.create_all(bind=engine)
 
 app = FastAPI()
 
-# --- [1. CORS 설정: 브라우저와 ngrok 사이의 벽 허물기] ---
+# --- [1. CORS & ngrok 설정] ---
+# Vercel(프론트)에서 ngrok(백엔드)으로 요청을 보낼 때 발생하는 보안 차단을 해제합니다.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"], 
+    allow_origins=["*"],  # 실제 서비스 시에는 Vercel 주소만 넣는 것이 안전합니다.
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
     expose_headers=["*"]
 )
 
-# ngrok "Browser Warning" 페이지와 OPTIONS 요청을 강제로 통과시키는 미들웨어
 @app.middleware("http")
-async def add_ngrok_and_cors_headers(request: Request, call_next):
+async def add_process_time_header(request: Request, call_next):
+    # ngrok 프리뷰 페이지를 건너뛰기 위한 헤더 추가 및 OPTIONS 처리
     if request.method == "OPTIONS":
         return Response(status_code=200, headers={
             "Access-Control-Allow-Origin": "*",
@@ -34,9 +35,10 @@ async def add_ngrok_and_cors_headers(request: Request, call_next):
         })
     response = await call_next(request)
     response.headers["Access-Control-Allow-Origin"] = "*"
+    # ngrok-skip-browser-warning 헤더는 프론트엔드 axios 설정에 추가하는 것이 더 좋습니다.
     return response
 
-# --- [2. 데이터 모델 정의] ---
+# --- [2. 공통 설정 및 DTO] ---
 def get_db():
     db = SessionLocal()
     try:
@@ -57,9 +59,8 @@ class LoginRequest(BaseModel):
 class ChargeRequest(BaseModel):
     amount: int
 
-# 인증번호 임시 저장소
+# 전역 변수 유지
 verification_codes = {}
-# 충전 요청 임시 저장소
 pending_payments = {}
 BANKS = ["대구은행", "신한은행", "국민은행", "우리은행", "카카오뱅크"]
 
@@ -67,7 +68,7 @@ BANKS = ["대구은행", "신한은행", "국민은행", "우리은행", "카카
 
 @app.get("/")
 def read_root():
-    return {"status": "online", "message": "DCU Shuttle API Server"}
+    return {"status": "online", "message": "DCU Shuttle API Server (Vercel Linked)"}
 
 def is_cu_email(email: str):
     return email.endswith("@cu.ac.kr")
@@ -104,20 +105,20 @@ def send_code(email: str):
 
 @app.post("/api/auth/signup")
 def signup(data: SignupRequest = Body(...), db: Session = Depends(get_db)):
-    print(f"📥 [DEBUG] 가입 시도: {data.email}")
+    print(f"📥 [Vercel Request] 가입 시도: {data.email}")
     try:
-        # 1. 인증번호 검증
-        saved_code = verification_codes.get(data.email)
-        if not saved_code or str(saved_code) != str(data.code):
-            print(f"❌ 인증번호 불일치: 입력({data.code}) vs 저장({saved_code})")
-            raise HTTPException(status_code=400, detail="인증번호가 틀렸거나 만료되었습니다.")
-        
-        # 2. 중복 확인
+        # 1. 중복 가입 체크 (IntegrityError 방지)
         existing_user = db.query(models.User).filter(models.User.email == data.email).first()
         if existing_user:
+            print(f"⚠️ 가입 거절: 이미 존재하는 이메일 ({data.email})")
             raise HTTPException(status_code=400, detail="이미 가입된 이메일입니다.")
+
+        # 2. 인증번호 검증
+        saved_code = verification_codes.get(data.email)
+        if not saved_code or str(saved_code) != str(data.code):
+            raise HTTPException(status_code=400, detail="인증번호가 틀렸거나 만료되었습니다.")
         
-        # 3. 유저 생성 (models.User 컬럼명 주의!)
+        # 3. 유저 생성
         new_user = models.User(
             email=data.email, 
             hashed_password=data.password, 
@@ -130,18 +131,16 @@ def signup(data: SignupRequest = Body(...), db: Session = Depends(get_db)):
         if data.email in verification_codes:
             del verification_codes[data.email]
             
-        print(f"✅ 회원가입 성공: {data.email}")
-        return {"status": "success", "message": "가입 성공"}
+        return {"status": "success", "message": "회원가입 완료"}
 
     except HTTPException as e:
         raise e
     except Exception as e:
-        # 💥 500 에러의 구체적인 원인을 터미널에 찍어줍니다.
-        print(f"💥 서버 내부 오류 발생:\n{traceback.format_exc()}")
         db.rollback()
+        print(f"💥 서버 에러 상세:\n{traceback.format_exc()}")
         return JSONResponse(
             status_code=500, 
-            content={"detail": f"서버 내부 오류: {str(e)}"}
+            content={"detail": "서버 내부 오류로 가입에 실패했습니다."}
         )
 
 @app.post("/api/auth/login")
@@ -155,7 +154,7 @@ def login(data: LoginRequest = Body(...), db: Session = Depends(get_db)):
         "user": {"id": user.id, "name": user.name, "points": user.points}
     }
 
-# --- [4. 유저 및 서비스 API] ---
+# --- [4. 유저 및 예약 API] ---
 
 @app.get("/api/user/status")
 def get_user_status(user_id: int = 1, db: Session = Depends(get_db)):
