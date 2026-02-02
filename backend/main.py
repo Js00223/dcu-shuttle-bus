@@ -36,7 +36,9 @@ def startup_event():
 # --- [2. CORS 설정] ---
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["https://dcu-shuttle-bus.vercel.app",
+        "https://dcu-shuttle-ipy5hmm9o-heos-projects-ecded165.vercel.app", # 현재 에러 나는 주소
+        "http://localhost:5173"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
