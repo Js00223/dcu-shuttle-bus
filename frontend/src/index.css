@@ -1,0 +1,10 @@
+@import "tailwindcss";
+
+/* 모바일 앱 환경에서 텍스트 드래그 방지 (앱 같은 느낌을 줌) */
+body {
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+  /* 모바일 Safe Area를 위한 변수 설정 */
+  padding-top: env(safe-area-inset-top);
+  padding-bottom: env(safe-area-inset-bottom);
+}
