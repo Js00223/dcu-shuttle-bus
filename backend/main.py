@@ -101,43 +101,49 @@ def send_code(email: str):
 
 # [수정됨] SignupRequest 모델을 Body로 명시하여 수신하도록 변경
 @app.post("/api/auth/signup")
-def signup(data: SignupRequest = Body(...), db: Session = Depends(get_db)):
+async def signup(request: Request, db: Session = Depends(get_db)):
     try:
-        print(f"📥 서버에 들어온 데이터: {data}")
+        # 1. JSON 데이터를 원시(Raw) 형태로 강제 추출
+        body = await request.json()
+        print(f"📥 [DEBUG] 서버 수신 데이터: {body}")
 
-        # 1. 인증번호 검증
-        saved_code = verification_codes.get(data.email)
-        if not saved_code or str(saved_code) != str(data.code):
-            print(f"❌ 회원가입 실패: {data.email} (입력:{data.code} / 저장:{saved_code})")
-            raise HTTPException(status_code=400, detail="인증번호가 일치하지 않거나 만료되었습니다.")
+        # 2. 데이터 추출 (딕셔너리 형태)
+        email = body.get("email")
+        code = body.get("code")
+        password = body.get("password")
+        name = body.get("name")
+
+        # 3. 누락 데이터 체크
+        if not all([email, code, password, name]):
+            print(f"❌ 데이터 누락됨: email={email}, code={code}, name={name}")
+            return JSONResponse(
+                status_code=422,
+                content={"detail": "모든 필드를 입력해야 합니다."}
+            )
+
+        # 4. 인증번호 검증
+        saved_code = verification_codes.get(email)
+        if not saved_code or str(saved_code) != str(code):
+            raise HTTPException(status_code=400, detail="인증번호가 틀렸거나 만료되었습니다.")
         
-        # 2. 중복 가입 체크
-        existing_user = db.query(models.User).filter(models.User.email == data.email).first()
+        # 5. 중복 가입 및 유저 생성 (기존 로직)
+        existing_user = db.query(models.User).filter(models.User.email == email).first()
         if existing_user:
-            raise HTTPException(status_code=400, detail="이미 가입된 이메일입니다.")
+            raise HTTPException(status_code=400, detail="이미 가입된 메일입니다.")
             
-        # 3. 유저 생성
-        new_user = models.User(
-            email=data.email, 
-            hashed_password=data.password, 
-            name=data.name, 
-            points=0
-        )
+        new_user = models.User(email=email, hashed_password=password, name=name, points=0)
         db.add(new_user)
         db.commit()
         
-        if data.email in verification_codes:
-            del verification_codes[data.email]
+        if email in verification_codes:
+            del verification_codes[email]
             
-        print(f"✅ 회원가입 성공: {data.email}")
-        return {"status": "success"}
+        return {"status": "success", "message": "회원가입 성공"}
 
-    except HTTPException as e:
-        raise e
     except Exception as e:
-        db.rollback()
-        print(f"💥 Signup Error: {traceback.format_exc()}")
-        raise HTTPException(status_code=500, detail="서버 에러가 발생했습니다.")
+        print(f"💥 서버 내부 에러: {str(e)}")
+        if isinstance(e, HTTPException): raise e
+        return JSONResponse(status_code=500, content={"detail": f"서버 내부 에러: {str(e)}"})
 
 @app.post("/api/auth/login")
 def login(data: LoginRequest, db: Session = Depends(get_db)):
