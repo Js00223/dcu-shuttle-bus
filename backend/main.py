@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 from typing import List
 from pydantic import BaseModel
 from email.mime.text import MIMEText
-import models, utils, datetime, database, random, smtplib, time
+import models, utils, datetime, database, random, smtplib, time, traceback
 from database import SessionLocal, engine
 
 # 데이터베이스 테이블 생성
@@ -13,14 +13,12 @@ models.Base.metadata.create_all(bind=engine)
 
 app = FastAPI()
 
-# --- [1. 강력한 커스텀 CORS 미들웨어] ---
-# 브라우저의 OPTIONS(Preflight) 요청과 ngrok 헤더 이슈를 원천 차단합니다.
+# --- [1. 무적 CORS 미들웨어] ---
+# 에러(500 등) 발생 시에도 브라우저가 응답을 읽을 수 있도록 헤더를 강제 삽입합니다.
 class UnifiedCORSMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
-        # Vercel 주소 정의
         origin = "https://dcu-shuttle-bus.vercel.app"
         
-        # 1. OPTIONS 요청(Preflight) 즉시 처리
         if request.method == "OPTIONS":
             return Response(
                 status_code=200,
@@ -32,17 +30,23 @@ class UnifiedCORSMiddleware(BaseHTTPMiddleware):
                 },
             )
         
-        # 2. 실제 요청 처리
-        response = await call_next(request)
+        try:
+            response = await call_next(request)
+        except Exception as e:
+            # 서버 내부 에러 발생 시에도 CORS 헤더를 붙여서 응답 보냄
+            print(f"Critical Error: {traceback.format_exc()}")
+            response = Response(
+                content=f'{{"detail": "서버 내부 에러: {str(e)}"}}',
+                status_code=500,
+                media_type="application/json"
+            )
         
-        # 3. 모든 응답 헤더에 CORS 허용 정보 주입
         response.headers["Access-Control-Allow-Origin"] = origin
         response.headers["Access-Control-Allow-Credentials"] = "true"
         response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS"
         response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization, ngrok-skip-browser-warning"
         return response
 
-# 미들웨어 등록 (순서가 중요합니다)
 app.add_middleware(UnifiedCORSMiddleware)
 
 # --- [2. 공통 설정 및 의존성] ---
@@ -53,12 +57,8 @@ def get_db():
     finally:
         db.close()
 
-# DTO 정의
 class ChargeRequest(BaseModel):
     amount: int
-
-class PhoneUpdateRequest(BaseModel):
-    phone: str
 
 pending_payments = {}
 BANKS = ["대구은행", "신한은행", "국민은행", "우리은행", "카카오뱅크"]
@@ -97,25 +97,40 @@ def send_code(email: str):
         raise HTTPException(status_code=400, detail="대학교 메일만 사용 가능합니다.")
     code = str(random.randint(100000, 999999))
     verification_codes[email] = code
-    print(f"인증번호 생성: {email} -> {code}") # 터미널에서 확인용
+    print(f"인증번호 생성: {email} -> {code}")
     if send_real_email(email, code):
         return {"status": "success", "message": "인증번호 발송 완료"}
     return {"status": "error", "message": "발송 실패"}
 
 @app.post("/api/auth/signup")
 def signup(email: str, code: str, password: str, name: str, db: Session = Depends(get_db)):
-    # 메모리에 저장된 코드와 비교
-    saved_code = verification_codes.get(email)
-    if not saved_code or saved_code != code:
-        print(f"회원가입 실패: {email} (입력:{code} / 저장:{saved_code})")
-        raise HTTPException(status_code=400, detail="인증번호가 일치하지 않거나 만료되었습니다.")
+    try:
+        # 1. 인증번호 검증
+        saved_code = verification_codes.get(email)
+        if not saved_code or saved_code != code:
+            print(f"회원가입 실패: {email} (입력:{code} / 저장:{saved_code})")
+            raise HTTPException(status_code=400, detail="인증번호가 일치하지 않거나 만료되었습니다.")
         
-    new_user = models.User(email=email, hashed_password=password, name=name, points=0)
-    db.add(new_user)
-    db.commit()
-    # 가입 성공 시 코드 삭제
-    del verification_codes[email]
-    return {"status": "success"}
+        # 2. 중복 가입 체크
+        existing_user = db.query(models.User).filter(models.User.email == email).first()
+        if existing_user:
+            raise HTTPException(status_code=400, detail="이미 가입된 이메일입니다.")
+            
+        # 3. 유저 생성
+        new_user = models.User(email=email, hashed_password=password, name=name, points=0)
+        db.add(new_user)
+        db.commit()
+        
+        if email in verification_codes:
+            del verification_codes[email]
+            
+        return {"status": "success"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        print(f"Signup DB Error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"회원가입 처리 중 오류 발생: {str(e)}")
 
 @app.post("/api/auth/login")
 def login(email: str, password: str, db: Session = Depends(get_db)):
@@ -176,7 +191,6 @@ def track_bus(route_id: int, user_lat: float, user_lng: float, db: Session = Dep
     if not bus:
         raise HTTPException(status_code=404, detail="해당 노선 없음")
     
-    # 실시간 위치 데이터가 없는 경우의 처리
     lat = bus.current_lat if bus.current_lat else 35.85
     lng = bus.current_lng if bus.current_lng else 128.56
     
