@@ -15,30 +15,38 @@ app = FastAPI()
 
 # --- [1. CORS & OPTIONS 무력화 설정] ---
 
-# 브라우저의 OPTIONS 요청(Preflight)이 ngrok 경고 페이지에 막히지 않도록 강제로 200 OK를 반환합니다.
+# 허용할 도메인 목록 (Vercel 주소 반드시 포함)
+ALLOWED_ORIGINS = [
+    "https://dcu-shuttle-bus.vercel.app",  # Vercel 배포 주소
+    "http://localhost:5173",               # 로컬 개발 환경
+    "http://127.0.0.1:5173"
+]
+
 @app.middleware("http")
 async def add_cors_and_options_handler(request: Request, call_next):
+    # 브라우저의 OPTIONS 요청(Preflight)에 대해 즉시 200 OK 응답
     if request.method == "OPTIONS":
         return Response(
             status_code=200,
             headers={
-                "Access-Control-Allow-Origin": "*",
-                "Access-Control-Allow-Methods": "*",
-                "Access-Control-Allow-Headers": "*",
+                "Access-Control-Allow-Origin": "https://dcu-shuttle-bus.vercel.app",
+                "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+                "Access-Control-Allow-Headers": "Content-Type, Authorization, ngrok-skip-browser-warning",
                 "Access-Control-Allow-Credentials": "true",
             },
         )
     
     response = await call_next(request)
-    response.headers["Access-Control-Allow-Origin"] = "*"
+    # 모든 응답 헤더에 CORS 허용 주소 명시
+    response.headers["Access-Control-Allow-Origin"] = "https://dcu-shuttle-bus.vercel.app"
     response.headers["Access-Control-Allow-Methods"] = "*"
     response.headers["Access-Control-Allow-Headers"] = "*"
     return response
 
-# 일반적인 API 요청을 위한 표준 CORS 설정
+# 표준 CORSMiddleware 설정
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -167,19 +175,15 @@ def get_routes(db: Session = Depends(get_db)):
 
 @app.get("/api/bus/track/{route_id}")
 def track_bus(route_id: int, user_lat: float, user_lng: float, db: Session = Depends(get_db)):
-    # 1. 해당 노선이 존재하는지 확인
     bus = db.query(models.BusRoute).filter(models.BusRoute.id == route_id).first()
     
     if not bus:
-        print(f"에러: ID {route_id}번 노선을 찾을 수 없습니다.")
         raise HTTPException(status_code=404, detail="해당 노선이 존재하지 않습니다.")
     
     if bus.current_lat is None or bus.current_lng is None:
-        print(f"에러: ID {route_id}번 노선의 실시간 위치 데이터가 없습니다.")
-        # 위치 정보만 없는 경우 404가 아니라 기본값을 주는 것이 앱 작동에 좋습니다.
         return {
             "route_name": bus.route_name,
-            "bus_location": {"lat": 35.85, "lng": 128.56}, # 기본값 (대구)
+            "bus_location": {"lat": 35.85, "lng": 128.56}, 
             "eta": 0
         }
     
