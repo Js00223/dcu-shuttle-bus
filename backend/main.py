@@ -1,6 +1,6 @@
-from fastapi import FastAPI, Depends, HTTPException, Request
-from fastapi.responses import Response
+from fastapi import FastAPI, Depends, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware
 from sqlalchemy.orm import Session
 from typing import List
 from pydantic import BaseModel
@@ -13,45 +13,37 @@ models.Base.metadata.create_all(bind=engine)
 
 app = FastAPI()
 
-# --- [1. CORS & OPTIONS 무력화 설정] ---
+# --- [1. 강력한 커스텀 CORS 미들웨어] ---
+# 브라우저의 OPTIONS(Preflight) 요청과 ngrok 헤더 이슈를 원천 차단합니다.
+class UnifiedCORSMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        # Vercel 주소 정의
+        origin = "https://dcu-shuttle-bus.vercel.app"
+        
+        # 1. OPTIONS 요청(Preflight) 즉시 처리
+        if request.method == "OPTIONS":
+            return Response(
+                status_code=200,
+                headers={
+                    "Access-Control-Allow-Origin": origin,
+                    "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+                    "Access-Control-Allow-Headers": "Content-Type, Authorization, ngrok-skip-browser-warning",
+                    "Access-Control-Allow-Credentials": "true",
+                },
+            )
+        
+        # 2. 실제 요청 처리
+        response = await call_next(request)
+        
+        # 3. 모든 응답 헤더에 CORS 허용 정보 주입
+        response.headers["Access-Control-Allow-Origin"] = origin
+        response.headers["Access-Control-Allow-Credentials"] = "true"
+        response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS"
+        response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization, ngrok-skip-browser-warning"
+        return response
 
-# 허용할 도메인 목록 (Vercel 주소 반드시 포함)
-ALLOWED_ORIGINS = [
-    "https://dcu-shuttle-bus.vercel.app",  # Vercel 배포 주소
-    "http://localhost:5173",               # 로컬 개발 환경
-    "http://127.0.0.1:5173"
-]
-
-@app.middleware("http")
-async def add_cors_and_options_handler(request: Request, call_next):
-    # 브라우저의 OPTIONS 요청(Preflight)에 대해 즉시 200 OK 응답
-    if request.method == "OPTIONS":
-        return Response(
-            status_code=200,
-            headers={
-                "Access-Control-Allow-Origin": "https://dcu-shuttle-bus.vercel.app",
-                "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-                "Access-Control-Allow-Headers": "Content-Type, Authorization, ngrok-skip-browser-warning",
-                "Access-Control-Allow-Credentials": "true",
-            },
-        )
-    
-    response = await call_next(request)
-    # 모든 응답 헤더에 CORS 허용 주소 명시
-    response.headers["Access-Control-Allow-Origin"] = "https://dcu-shuttle-bus.vercel.app"
-    response.headers["Access-Control-Allow-Methods"] = "*"
-    response.headers["Access-Control-Allow-Headers"] = "*"
-    return response
-
-# 표준 CORSMiddleware 설정
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=ALLOWED_ORIGINS,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-    expose_headers=["*"]
-)
+# 미들웨어 등록 (순서가 중요합니다)
+app.add_middleware(UnifiedCORSMiddleware)
 
 # --- [2. 공통 설정 및 의존성] ---
 def get_db():
@@ -105,17 +97,24 @@ def send_code(email: str):
         raise HTTPException(status_code=400, detail="대학교 메일만 사용 가능합니다.")
     code = str(random.randint(100000, 999999))
     verification_codes[email] = code
+    print(f"인증번호 생성: {email} -> {code}") # 터미널에서 확인용
     if send_real_email(email, code):
         return {"status": "success", "message": "인증번호 발송 완료"}
     return {"status": "error", "message": "발송 실패"}
 
 @app.post("/api/auth/signup")
 def signup(email: str, code: str, password: str, name: str, db: Session = Depends(get_db)):
-    if verification_codes.get(email) != code:
-        raise HTTPException(status_code=400, detail="인증번호 불일치")
+    # 메모리에 저장된 코드와 비교
+    saved_code = verification_codes.get(email)
+    if not saved_code or saved_code != code:
+        print(f"회원가입 실패: {email} (입력:{code} / 저장:{saved_code})")
+        raise HTTPException(status_code=400, detail="인증번호가 일치하지 않거나 만료되었습니다.")
+        
     new_user = models.User(email=email, hashed_password=password, name=name, points=0)
     db.add(new_user)
     db.commit()
+    # 가입 성공 시 코드 삭제
+    del verification_codes[email]
     return {"status": "success"}
 
 @app.post("/api/auth/login")
@@ -166,40 +165,30 @@ def confirm_charge(payment_id: str, db: Session = Depends(get_db)):
     del pending_payments[payment_id]
     return {"status": "success", "new_points": user.points}
 
-# --- [5. 버스 트래킹 및 예약 API] ---
-@app.get("/routes")
+# --- [5. 노선 및 트래킹 API] ---
 @app.get("/api/routes")
 def get_routes(db: Session = Depends(get_db)):
-    routes = db.query(models.BusRoute).all()
-    return routes
+    return db.query(models.BusRoute).all()
 
 @app.get("/api/bus/track/{route_id}")
 def track_bus(route_id: int, user_lat: float, user_lng: float, db: Session = Depends(get_db)):
     bus = db.query(models.BusRoute).filter(models.BusRoute.id == route_id).first()
-    
     if not bus:
-        raise HTTPException(status_code=404, detail="해당 노선이 존재하지 않습니다.")
+        raise HTTPException(status_code=404, detail="해당 노선 없음")
     
-    if bus.current_lat is None or bus.current_lng is None:
-        return {
-            "route_name": bus.route_name,
-            "bus_location": {"lat": 35.85, "lng": 128.56}, 
-            "eta": 0
-        }
+    # 실시간 위치 데이터가 없는 경우의 처리
+    lat = bus.current_lat if bus.current_lat else 35.85
+    lng = bus.current_lng if bus.current_lng else 128.56
     
     try:
-        eta_info = utils.calculate_eta(user_lat, user_lng, bus.current_lat, bus.current_lng)
+        eta_info = utils.calculate_eta(user_lat, user_lng, lat, lng)
         return {
             "route_name": bus.route_name,
-            "bus_location": {"lat": bus.current_lat, "lng": bus.current_lng},
+            "bus_location": {"lat": lat, "lng": lng},
             "eta": eta_info["eta_minutes"]
         }
-    except Exception as e:
-        return {
-            "route_name": bus.route_name,
-            "bus_location": {"lat": bus.current_lat, "lng": bus.current_lng},
-            "eta": 0
-        }
+    except:
+        return {"route_name": bus.route_name, "bus_location": {"lat": lat, "lng": lng}, "eta": 0}
 
 @app.post("/api/bookings/reserve")
 def reserve_bus(route_id: int, user_id: int = 1, db: Session = Depends(get_db)):
