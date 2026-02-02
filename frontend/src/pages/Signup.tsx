@@ -9,10 +9,9 @@ export const Signup = () => {
   const [code, setCode] = useState("");
   const [isSent, setIsSent] = useState(false);
 
-  // 환경 변수에서 베이스 URL 가져오기
   const API_BASE_URL = import.meta.env.VITE_API_URL || "";
 
-  // 1. 인증번호 발송 (기존 방식 유지 - 이메일만 파라미터로 전달)
+  // 1. 인증번호 발송
   const handleSendCode = async () => {
     if (!email.endsWith("@cu.ac.kr")) {
       alert("학교 메일(@cu.ac.kr)만 사용 가능합니다.");
@@ -44,29 +43,30 @@ export const Signup = () => {
     }
   };
 
-  // 2. 회원가입 제출 (중요: Body에 JSON 담아 보내기)
+  // 2. 회원가입 제출 (오타 수정 및 데이터 검증 추가)
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
+    // 데이터 객체 생성 (String 대문자 수정)
+    const signupData = {
+      email: String(email).trim(),
+      code: String(code).trim(),
+      password: String(password),
+      name: String(name).trim()
+    };
+
+    console.log("🚀 서버로 전송할 데이터:", signupData);
+    
     try {
-      // URL은 더 이상 파라미터를 붙이지 않고 깔끔하게 유지합니다.
       const url = `${API_BASE_URL}/api/auth/signup`;
-      
-      console.log("회원가입 요청 시도 (Body 전송 방식)");
       
       const response = await fetch(url, {
         method: "POST",
         headers: {
           "ngrok-skip-browser-warning": "69420",
-          "Content-Type": "application/json", // JSON 형식을 서버에 알림
+          "Content-Type": "application/json",
         },
-        // 데이터를 JSON 문자열로 변환하여 Body에 담습니다.
-        body: JSON.stringify({
-          email: string(email),
-          code: string(code),
-          password: string(password),
-          name: string(name)
-        }),
+        body: JSON.stringify(signupData),
       });
 
       if (response.ok) {
@@ -74,8 +74,10 @@ export const Signup = () => {
         navigate("/login");
       } else {
         const data = await response.json();
-        console.warn("회원가입 거절 사유:", data.detail); 
-        alert(`회원가입 실패: ${data.detail || "정보를 확인해주세요."}`);
+        console.warn("❌ 회원가입 거절 사유:", data.detail); 
+        // FastAPI의 상세 에러 메시지가 배열인 경우 처리
+        const errorMsg = typeof data.detail === 'string' ? data.detail : "입력 정보를 다시 확인해주세요.";
+        alert(`회원가입 실패: ${errorMsg}`);
       }
     } catch (error) {
       console.error("가입 에러:", error);
