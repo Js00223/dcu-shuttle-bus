@@ -9,36 +9,65 @@ export const Signup = () => {
   const [code, setCode] = useState("");
   const [isSent, setIsSent] = useState(false);
 
+  // 환경 변수에서 베이스 URL 가져오기
+  const API_BASE_URL = import.meta.env.VITE_API_URL || "";
+
   const handleSendCode = async () => {
     if (!email.endsWith("@cu.ac.kr")) {
       alert("학교 메일(@cu.ac.kr)만 사용 가능합니다.");
       return;
     }
-    const response = await fetch(
-      `https://umbrellalike-multiseriate-cythia.ngrok-free.dev/apimultiseriate-cythia.ngrok-free.dev/api/auth/send-code?email=${email}`,
-      { method: "POST" },
-    );
-    if (response.ok) {
-      setIsSent(true);
-      alert("인증번호가 발송되었습니다.");
+    
+    try {
+      // 1. 주소 중복 오류 수정 및 환경 변수 적용
+      const url = `${API_BASE_URL}/api/auth/send-code?email=${email}`;
+      
+      const response = await fetch(url, { 
+        method: "POST",
+        headers: {
+          // 2. ngrok 경고 페이지 스킵 헤더 추가
+          "ngrok-skip-browser-warning": "69420",
+          "Content-Type": "application/json",
+        },
+      });
+
+      if (response.ok) {
+        setIsSent(true);
+        alert("인증번호가 발송되었습니다.");
+      } else {
+        alert("인증번호 발송에 실패했습니다.");
+      }
+    } catch (error) {
+      console.error("발송 에러:", error);
+      alert("서버와 연결할 수 없습니다.");
     }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const response = await fetch(
-      `https://umbrellalike-multiseriate-cythia.ngrok-free.dev/apimultiseriate-cythia.ngrok-free.dev/api/auth/signup?email=${email}&password=${password}&name=${name}&code=${code}`,
-      {
+    
+    try {
+      // 3. 회원가입 주소도 환경 변수로 수정
+      const url = `${API_BASE_URL}/api/auth/signup?email=${email}&password=${password}&name=${name}&code=${code}`;
+      
+      const response = await fetch(url, {
         method: "POST",
-      },
-    );
+        headers: {
+          "ngrok-skip-browser-warning": "69420",
+          "Content-Type": "application/json",
+        },
+      });
 
-    if (response.ok) {
-      alert("회원가입 완료! 로그인 페이지로 이동합니다.");
-      navigate("/login"); // navigate 사용으로 에러 해결
-    } else {
-      const data = await response.json();
-      alert(data.detail);
+      if (response.ok) {
+        alert("회원가입 완료! 로그인 페이지로 이동합니다.");
+        navigate("/login");
+      } else {
+        const data = await response.json();
+        alert(data.detail || "회원가입에 실패했습니다.");
+      }
+    } catch (error) {
+      console.error("가입 에러:", error);
+      alert("서버와 연결할 수 없습니다.");
     }
   };
 
@@ -75,7 +104,7 @@ export const Signup = () => {
               type="text"
               placeholder="인증번호 6자리"
               className="w-full p-4 bg-gray-100 rounded-2xl outline-none border-2 border-blue-200"
-              onChange={(e) => setCode(e.target.value)} // code 사용으로 에러 해결
+              onChange={(e) => setCode(e.target.value)}
               required
             />
           )}
