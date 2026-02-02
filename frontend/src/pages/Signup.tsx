@@ -60,15 +60,19 @@ export const Signup = () => {
     try {
       const url = `${API_BASE_URL}/api/auth/signup`;
       
-      const response = await fetch(url, {
-        method: "POST",
-        headers: {
-          "Accept": "application/json",
-          "Content-Type": "application/json", // 중요: 백엔드가 JSON을 인식하게 함
-          "ngrok-skip-browser-warning": "69420",
-        },
-        body: JSON.stringify(signupData),
-      });
+      const response = await fetch(`${API_BASE_URL}/api/auth/signup`, {
+  method: "POST",
+  headers: {
+    "Content-Type": "application/json", // 이 헤더가 필수입니다!
+    "ngrok-skip-browser-warning": "69420",
+  },
+  body: JSON.stringify({
+    email: email.trim(),
+    code: code.trim(),
+    password: password,
+    name: name.trim()
+  }),
+});
 
       const result = await response.json();
 
