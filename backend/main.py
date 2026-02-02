@@ -48,7 +48,7 @@ verification_codes = {}
 # --- [4. API 엔드포인트] ---
 
 # (1) 인증번호 발송
-@app.post("/auth/send-code")
+@app.post("/api/auth/send-code")
 def send_verification_code(email: str):
     if not email.endswith("@cu.ac.kr"):
         raise HTTPException(status_code=400, detail="대구가톨릭대 메일만 가능합니다.")
@@ -90,7 +90,7 @@ def login(email: str, password: str, db: Session = Depends(get_db)):
     }
 
 # (4) 노선 조회 및 예약
-@app.get("/routes")
+@app.get("/api/routes")
 def get_all_routes(db: Session = Depends(get_db)):
     return db.query(models.BusRoute).all()
 
