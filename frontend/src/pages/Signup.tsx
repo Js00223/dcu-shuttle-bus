@@ -19,7 +19,9 @@ export const Signup = () => {
     }
     
     try {
-      const url = `${API_BASE_URL}/api/auth/send-code?email=${email}`;
+      // 쿼리 파라미터를 안전하게 인코딩하여 생성
+      const params = new URLSearchParams({ email });
+      const url = `${API_BASE_URL}/api/auth/send-code?${params.toString()}`;
       
       const response = await fetch(url, { 
         method: "POST",
@@ -34,12 +36,11 @@ export const Signup = () => {
         alert("인증번호가 발송되었습니다. 메일함을 확인해주세요!");
       } else {
         const errorData = await response.json();
-        console.error("인증번호 발송 실패 상세:", errorData);
         alert(`발송 실패: ${errorData.detail || "알 수 없는 에러"}`);
       }
     } catch (error) {
       console.error("네트워크 에러 (발송):", error);
-      alert("서버와 연결할 수 없습니다. 백엔드와 ngrok이 켜져 있는지 확인하세요.");
+      alert("서버와 연결할 수 없습니다.");
     }
   };
 
@@ -47,31 +48,39 @@ export const Signup = () => {
     e.preventDefault();
     
     try {
-      // 쿼리 스트링 방식 유지 (백엔드 설계에 맞춤)
-      const url = `${API_BASE_URL}/api/auth/signup?email=${email}&password=${password}&name=${name}&code=${code}`;
+      // 1. 백엔드 설계에 맞춰 모든 데이터를 쿼리 스트링으로 변환
+      // URL 끝에 /가 붙거나 오타가 나지 않도록 URLSearchParams 사용
+      const params = new URLSearchParams({
+        email: email,
+        password: password,
+        name: name,
+        code: code
+      });
       
-      console.log("회원가입 요청 시도 중...");
+      const url = `${API_BASE_URL}/api/auth/signup?${params.toString()}`;
+      
+      console.log("회원가입 요청 시도 (POST):", url);
       
       const response = await fetch(url, {
-        method: "POST",
+        method: "POST", // Method를 명시적으로 POST로 고정
         headers: {
           "ngrok-skip-browser-warning": "69420",
           "Content-Type": "application/json",
         },
+        // Body를 비워두더라도 Method가 POST이면 백엔드에서 정상 수신함
       });
 
       if (response.ok) {
         alert("🎉 회원가입 성공! 로그인 페이지로 이동합니다.");
         navigate("/login");
       } else {
-        // 400 Bad Request 등의 에러 메시지를 백엔드로부터 받아 출력
         const data = await response.json();
         console.warn("회원가입 거절 사유:", data.detail); 
-        alert(`회원가입 실패: ${data.detail}`); // 여기서 '인증번호 불일치' 등이 표시됨
+        alert(`회원가입 실패: ${data.detail}`);
       }
     } catch (error) {
-      console.error("네트워크 에러 (가입):", error);
-      alert("서버 통신에 실패했습니다. 다시 시도해주세요.");
+      console.error("가입 에러:", error);
+      alert("서버와 통신할 수 없습니다. 잠시 후 다시 시도해주세요.");
     }
   };
 
