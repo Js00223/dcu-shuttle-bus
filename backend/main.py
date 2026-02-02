@@ -1,6 +1,5 @@
 from fastapi import FastAPI, Depends, HTTPException, Request, Response, Body
 from fastapi.middleware.cors import CORSMiddleware
-from starlette.middleware.base import BaseHTTPMiddleware
 from sqlalchemy.orm import Session
 from typing import List, Optional
 from pydantic import BaseModel
@@ -16,7 +15,6 @@ models.Base.metadata.create_all(bind=engine)
 app = FastAPI()
 
 # --- [1. CORS 설정 최적화] ---
-# 수동 미들웨어 대신 FastAPI 내장 CORSMiddleware를 사용하는 것이 422 에러 핸들링에 더 유리합니다.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["https://dcu-shuttle-bus.vercel.app"],
@@ -52,7 +50,6 @@ verification_codes = {}
 
 # --- [3. 에러 핸들러 및 인증 API] ---
 
-# 422 에러 발생 시 CORS 헤더를 포함하여 상세 내용을 브라우저에 전달
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request: Request, exc: RequestValidationError):
     print(f"❌ 데이터 검증 에러 발생: {exc.errors()}")
@@ -60,7 +57,7 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
         status_code=422,
         content={
             "status": "error",
-            "message": "데이터 형식이 맞지 않습니다. 필드명을 확인해주세요.",
+            "message": "데이터 형식이 맞지 않습니다.",
             "detail": exc.errors()
         }
     )
@@ -102,13 +99,16 @@ def send_code(email: str):
         return {"status": "success", "message": "인증번호 발송 완료"}
     return {"status": "error", "message": "발송 실패"}
 
+# [수정됨] SignupRequest 모델을 Body로 명시하여 수신하도록 변경
 @app.post("/api/auth/signup")
-def signup(data: SignupRequest, db: Session = Depends(get_db)):
+def signup(data: SignupRequest = Body(...), db: Session = Depends(get_db)):
     try:
+        print(f"📥 서버에 들어온 데이터: {data}")
+
         # 1. 인증번호 검증
         saved_code = verification_codes.get(data.email)
-        if not saved_code or saved_code != data.code:
-            print(f"회원가입 실패: {data.email} (입력:{data.code} / 저장:{saved_code})")
+        if not saved_code or str(saved_code) != str(data.code):
+            print(f"❌ 회원가입 실패: {data.email} (입력:{data.code} / 저장:{saved_code})")
             raise HTTPException(status_code=400, detail="인증번호가 일치하지 않거나 만료되었습니다.")
         
         # 2. 중복 가입 체크
@@ -117,7 +117,12 @@ def signup(data: SignupRequest, db: Session = Depends(get_db)):
             raise HTTPException(status_code=400, detail="이미 가입된 이메일입니다.")
             
         # 3. 유저 생성
-        new_user = models.User(email=data.email, hashed_password=data.password, name=data.name, points=0)
+        new_user = models.User(
+            email=data.email, 
+            hashed_password=data.password, 
+            name=data.name, 
+            points=0
+        )
         db.add(new_user)
         db.commit()
         
@@ -126,12 +131,13 @@ def signup(data: SignupRequest, db: Session = Depends(get_db)):
             
         print(f"✅ 회원가입 성공: {data.email}")
         return {"status": "success"}
+
     except HTTPException as e:
         raise e
     except Exception as e:
         db.rollback()
-        print(f"Signup DB Error: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"회원가입 처리 중 오류 발생: {str(e)}")
+        print(f"💥 Signup Error: {traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail="서버 에러가 발생했습니다.")
 
 @app.post("/api/auth/login")
 def login(data: LoginRequest, db: Session = Depends(get_db)):
@@ -144,7 +150,7 @@ def login(data: LoginRequest, db: Session = Depends(get_db)):
         "user": {"id": user.id, "name": user.name, "points": user.points}
     }
 
-# --- [4. 유저 및 충전 API (이하 동일)] ---
+# --- [4. 유저 및 충전 API] ---
 @app.get("/api/user/status")
 def get_user_status(user_id: int = 1, db: Session = Depends(get_db)):
     user = db.query(models.User).filter(models.User.id == user_id).first()
