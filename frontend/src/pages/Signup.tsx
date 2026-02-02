@@ -62,10 +62,10 @@ export const Signup = () => {
         },
         // 데이터를 JSON 문자열로 변환하여 Body에 담습니다.
         body: JSON.stringify({
-          email: email,
-          code: code,
-          password: password,
-          name: name
+          email: string(email),
+          code: string(code),
+          password: string(password),
+          name: string(name)
         }),
       });
 
