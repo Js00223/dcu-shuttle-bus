@@ -7,45 +7,38 @@ from email.mime.text import MIMEText
 import models, utils, datetime, database, random, smtplib, time, traceback
 from database import SessionLocal, engine
 from fastapi.responses import JSONResponse
+import os
 
 # 데이터베이스 테이블 생성
 models.Base.metadata.create_all(bind=engine)
 
 app = FastAPI()
 
-# --- [1. CORS 및 ngrok 연동 미들웨어] ---
-# Vercel에서 오는 모든 요청을 허용하고, ngrok 특유의 보안 차단을 우회합니다.
+# --- [1. CORS 설정 최적화] ---
+# Render와 Vercel 사이의 통신을 위해 모든 출처를 허용합니다.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"], 
+    allow_origins=["*"],  # Vercel 도메인이 확정되면 ["https://your-vercel.app"]으로 제한 가능
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
     expose_headers=["*"]
 )
 
+# Render에서 발생할 수 있는 Preflight(사전 요청) 문제를 방지하기 위한 추가 헤더 설정
 @app.middleware("http")
-async def add_ngrok_cors_middleware(request: Request, call_next):
-    # 1. 브라우저의 사전 요청(OPTIONS)에 대해 즉시 200 응답 및 헤더 부여
+async def add_process_time_header(request: Request, call_next):
     if request.method == "OPTIONS":
         return Response(status_code=200, headers={
             "Access-Control-Allow-Origin": "*",
             "Access-Control-Allow-Methods": "*",
             "Access-Control-Allow-Headers": "*",
         })
-    
-    # 2. 실제 요청 처리
     response = await call_next(request)
-    
-    # 3. 모든 응답 헤더에 CORS 허용 및 ngrok 경고 무시 헤더 강제 주입
     response.headers["Access-Control-Allow-Origin"] = "*"
-    response.headers["Access-Control-Allow-Headers"] = "*"
-    # ngrok 프리뷰 페이지를 우회하도록 응답에도 헤더 설정 (브라우저 정책 대응)
-    response.headers["ngrok-skip-browser-warning"] = "69420"
-    
     return response
 
-# --- [2. 데이터 모델] ---
+# --- [2. 데이터 모델 및 DB 세션] ---
 def get_db():
     db = SessionLocal()
     try:
@@ -63,19 +56,14 @@ class LoginRequest(BaseModel):
     email: str
     password: str
 
-class ChargeRequest(BaseModel):
-    amount: int
-
-# 임시 저장소
+# 임시 저장소 (주의: Render 무료 서버가 잠들면 초기화됩니다)
 verification_codes = {}
-pending_payments = {}
-BANKS = ["대구은행", "신한은행", "국민은행", "우리은행", "카카오뱅크"]
 
 # --- [3. 핵심 API 로직] ---
 
 @app.get("/")
 def read_root():
-    return {"status": "online", "message": "DCU Shuttle API Server"}
+    return {"status": "online", "message": "DCU Shuttle API Server on Render"}
 
 def send_real_email(receiver_email: str, code: str):
     smtp_server = "smtp.gmail.com"
@@ -109,12 +97,10 @@ def send_code(email: str):
 
 @app.post("/api/auth/signup")
 def signup(data: SignupRequest = Body(...), db: Session = Depends(get_db)):
-    print(f"📥 가입 요청: {data.email}")
     try:
-        # 1. 중복 이메일 체크 (IntegrityError 방지)
+        # 1. 중복 이메일 체크
         existing_user = db.query(models.User).filter(models.User.email == data.email).first()
         if existing_user:
-            print(f"⚠️ 중복 계정 가입 시도: {data.email}")
             return JSONResponse(status_code=400, content={"detail": "이미 가입된 이메일입니다."})
 
         # 2. 인증번호 검증
@@ -135,7 +121,6 @@ def signup(data: SignupRequest = Body(...), db: Session = Depends(get_db)):
         if data.email in verification_codes:
             del verification_codes[data.email]
             
-        print(f"✅ 가입 성공: {data.email}")
         return {"status": "success", "message": "회원가입 완료"}
 
     except Exception as e:
@@ -147,14 +132,13 @@ def signup(data: SignupRequest = Body(...), db: Session = Depends(get_db)):
 def login(data: LoginRequest = Body(...), db: Session = Depends(get_db)):
     user = db.query(models.User).filter(models.User.email == data.email).first()
     if not user or user.hashed_password != data.password:
-        raise HTTPException(status_code=401, detail="로그인 정보 오류")
+        return JSONResponse(status_code=401, content={"detail": "아이디 또는 비밀번호가 틀렸습니다."})
+    
     return {
         "status": "success",
         "token": f"fake-jwt-{user.id}",
         "user": {"id": user.id, "name": user.name, "points": user.points}
     }
-
-# --- [4. 기타 서비스 API] ---
 
 @app.get("/api/user/status")
 def get_user_status(user_id: int = 1, db: Session = Depends(get_db)):
