@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Depends, HTTPException, Request, Response
+from fastapi import FastAPI, Depends, HTTPException, Request, Response, Body
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 from sqlalchemy.orm import Session
@@ -7,46 +7,23 @@ from pydantic import BaseModel
 from email.mime.text import MIMEText
 import models, utils, datetime, database, random, smtplib, time, traceback
 from database import SessionLocal, engine
-from fastapi.exceptions import RequestValidationError # 추가됨
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
 
 # 데이터베이스 테이블 생성
 models.Base.metadata.create_all(bind=engine)
 
 app = FastAPI()
 
-# --- [1. 무적 CORS 미들웨어] ---
-class UnifiedCORSMiddleware(BaseHTTPMiddleware):
-    async def dispatch(self, request: Request, call_next):
-        origin = "https://dcu-shuttle-bus.vercel.app"
-        
-        if request.method == "OPTIONS":
-            return Response(
-                status_code=200,
-                headers={
-                    "Access-Control-Allow-Origin": origin,
-                    "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-                    "Access-Control-Allow-Headers": "Content-Type, Authorization, ngrok-skip-browser-warning",
-                    "Access-Control-Allow-Credentials": "true",
-                },
-            )
-        
-        try:
-            response = await call_next(request)
-        except Exception as e:
-            print(f"Critical Error: {traceback.format_exc()}")
-            response = Response(
-                content=f'{{"detail": "서버 내부 에러: {str(e)}"}}',
-                status_code=500,
-                media_type="application/json"
-            )
-        
-        response.headers["Access-Control-Allow-Origin"] = origin
-        response.headers["Access-Control-Allow-Credentials"] = "true"
-        response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS"
-        response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization, ngrok-skip-browser-warning"
-        return response
-
-app.add_middleware(UnifiedCORSMiddleware)
+# --- [1. CORS 설정 최적화] ---
+# 수동 미들웨어 대신 FastAPI 내장 CORSMiddleware를 사용하는 것이 422 에러 핸들링에 더 유리합니다.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["https://dcu-shuttle-bus.vercel.app"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # --- [2. 공통 설정 및 DTO 정의] ---
 def get_db():
@@ -56,7 +33,6 @@ def get_db():
     finally:
         db.close()
 
-# Body 수신을 위한 데이터 모델 (DTO)
 class SignupRequest(BaseModel):
     email: str
     code: str
@@ -76,15 +52,17 @@ verification_codes = {}
 
 # --- [3. 에러 핸들러 및 인증 API] ---
 
-# 422 Unprocessable Content 에러의 원인을 터미널에 상세히 출력해주는 핸들러
+# 422 에러 발생 시 CORS 헤더를 포함하여 상세 내용을 브라우저에 전달
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request: Request, exc: RequestValidationError):
     print(f"❌ 데이터 검증 에러 발생: {exc.errors()}")
-    # 에러 내용을 프론트엔드에게도 상세히 전달
-    return Response(
-        content=f'{{"status": "error", "message": "데이터 형식이 맞지 않습니다.", "detail": {exc.errors()}}}',
+    return JSONResponse(
         status_code=422,
-        media_type="application/json"
+        content={
+            "status": "error",
+            "message": "데이터 형식이 맞지 않습니다. 필드명을 확인해주세요.",
+            "detail": exc.errors()
+        }
     )
 
 @app.get("/")
@@ -148,8 +126,8 @@ def signup(data: SignupRequest, db: Session = Depends(get_db)):
             
         print(f"✅ 회원가입 성공: {data.email}")
         return {"status": "success"}
-    except HTTPException:
-        raise
+    except HTTPException as e:
+        raise e
     except Exception as e:
         db.rollback()
         print(f"Signup DB Error: {str(e)}")
@@ -166,7 +144,7 @@ def login(data: LoginRequest, db: Session = Depends(get_db)):
         "user": {"id": user.id, "name": user.name, "points": user.points}
     }
 
-# --- [4. 유저 및 충전 API] ---
+# --- [4. 유저 및 충전 API (이하 동일)] ---
 @app.get("/api/user/status")
 def get_user_status(user_id: int = 1, db: Session = Depends(get_db)):
     user = db.query(models.User).filter(models.User.id == user_id).first()
@@ -203,7 +181,6 @@ def confirm_charge(payment_id: str, db: Session = Depends(get_db)):
     del pending_payments[payment_id]
     return {"status": "success", "new_points": user.points}
 
-# --- [5. 노선 및 트래킹 API] ---
 @app.get("/api/routes")
 def get_routes(db: Session = Depends(get_db)):
     return db.query(models.BusRoute).all()
@@ -213,17 +190,11 @@ def track_bus(route_id: int, user_lat: float, user_lng: float, db: Session = Dep
     bus = db.query(models.BusRoute).filter(models.BusRoute.id == route_id).first()
     if not bus:
         raise HTTPException(status_code=404, detail="해당 노선 없음")
-    
     lat = bus.current_lat if bus.current_lat else 35.85
     lng = bus.current_lng if bus.current_lng else 128.56
-    
     try:
         eta_info = utils.calculate_eta(user_lat, user_lng, lat, lng)
-        return {
-            "route_name": bus.route_name,
-            "bus_location": {"lat": lat, "lng": lng},
-            "eta": eta_info["eta_minutes"]
-        }
+        return {"route_name": bus.route_name, "bus_location": {"lat": lat, "lng": lng}, "eta": eta_info["eta_minutes"]}
     except:
         return {"route_name": bus.route_name, "bus_location": {"lat": lat, "lng": lng}, "eta": 0}
 
@@ -232,7 +203,6 @@ def reserve_bus(route_id: int, user_id: int = 1, db: Session = Depends(get_db)):
     user = db.query(models.User).filter(models.User.id == user_id).first()
     if not user: raise HTTPException(status_code=404, detail="유저 없음")
     if user.points < 3000: raise HTTPException(status_code=400, detail="포인트 부족")
-    
     user.points -= 3000
     new_booking = models.Booking(user_id=user_id, route_id=route_id, booked_at=datetime.datetime.now())
     db.add(new_booking)
