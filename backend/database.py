@@ -7,9 +7,10 @@ from sqlalchemy.orm import sessionmaker
 # 정확한 조합: postgres.aocsrtgjxpdsxhwtxrfd
 DB_USER = "postgres.aocsrtgjxpdsxhwtxrfd"
 DB_PASS = "Js00334422%40%40" # @ 기호를 %40으로 인코딩
-DB_HOST = "aws-0-ap-northeast-2.pooler.supabase.com"
+DB_HOST = "aws-1-ap-northeast-2.pooler.supabase.com"
 DB_PORT = "6543"
 DB_NAME = "postgres"
+pool_mode: "transcation"
 
 # f-string을 사용하여 오타 없이 조합
 SQLALCHEMY_DATABASE_URL = f"postgresql+psycopg2://{DB_USER}:{DB_PASS}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
