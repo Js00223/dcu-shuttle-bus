@@ -9,6 +9,7 @@ export const Signup = () => {
   const [code, setCode] = useState("");
   const [isSent, setIsSent] = useState(false);
 
+  // 환경 변수 확인
   const API_BASE_URL = import.meta.env.VITE_API_URL || "";
 
   // 1. 인증번호 발송
@@ -19,14 +20,12 @@ export const Signup = () => {
     }
     
     try {
-      const params = new URLSearchParams({ email });
-      const url = `${API_BASE_URL}/api/auth/send-code?${params.toString()}`;
+      const url = `${API_BASE_URL}/api/auth/send-code?email=${encodeURIComponent(email)}`;
       
       const response = await fetch(url, { 
         method: "POST",
         headers: {
           "ngrok-skip-browser-warning": "69420",
-          "Content-Type": "application/json",
         },
       });
 
@@ -43,11 +42,11 @@ export const Signup = () => {
     }
   };
 
-  // 2. 회원가입 제출 (오타 수정 및 데이터 검증 추가)
+  // 2. 회원가입 제출 (Body 전송 방식 최적화)
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    // 데이터 객체 생성 (String 대문자 수정)
+    // 전송할 데이터 객체 (String 대문자 수정 및 검증)
     const signupData = {
       email: String(email).trim(),
       code: String(code).trim(),
@@ -55,7 +54,8 @@ export const Signup = () => {
       name: String(name).trim()
     };
 
-    console.log("🚀 서버로 전송할 데이터:", signupData);
+    // [디버깅] 전송 직전 콘솔 확인 (값이 비어있는지 꼭 보세요!)
+    console.log("📤 서버로 전송할 데이터:", signupData);
     
     try {
       const url = `${API_BASE_URL}/api/auth/signup`;
@@ -63,21 +63,31 @@ export const Signup = () => {
       const response = await fetch(url, {
         method: "POST",
         headers: {
+          "Accept": "application/json",
+          "Content-Type": "application/json", // 중요: 백엔드가 JSON을 인식하게 함
           "ngrok-skip-browser-warning": "69420",
-          "Content-Type": "application/json",
         },
         body: JSON.stringify(signupData),
       });
+
+      const result = await response.json();
 
       if (response.ok) {
         alert("🎉 회원가입 성공! 로그인 페이지로 이동합니다.");
         navigate("/login");
       } else {
-        const data = await response.json();
-        console.warn("❌ 회원가입 거절 사유:", data.detail); 
-        // FastAPI의 상세 에러 메시지가 배열인 경우 처리
-        const errorMsg = typeof data.detail === 'string' ? data.detail : "입력 정보를 다시 확인해주세요.";
-        alert(`회원가입 실패: ${errorMsg}`);
+        // 422 에러 시 상세 이유를 콘솔에 출력
+        console.error("❌ 서버 응답 에러 상세:", result);
+        
+        // 에러 메시지 가독성 처리
+        let errorMsg = "정보를 다시 확인해주세요.";
+        if (result.detail && Array.isArray(result.detail)) {
+          errorMsg = result.detail.map((err: any) => `${err.loc[1]}: ${err.msg}`).join("\n");
+        } else if (typeof result.detail === 'string') {
+          errorMsg = result.detail;
+        }
+        
+        alert(`회원가입 실패:\n${errorMsg}`);
       }
     } catch (error) {
       console.error("가입 에러:", error);
@@ -94,6 +104,7 @@ export const Signup = () => {
             type="text"
             placeholder="이름"
             className="w-full p-4 bg-gray-100 rounded-2xl outline-none focus:ring-2 focus:ring-blue-500 transition-all"
+            value={name}
             onChange={(e) => setName(e.target.value)}
             required
           />
@@ -102,6 +113,7 @@ export const Signup = () => {
               type="email"
               placeholder="학교 이메일 (@cu.ac.kr)"
               className="flex-1 p-4 bg-gray-100 rounded-2xl outline-none focus:ring-2 focus:ring-blue-500 transition-all"
+              value={email}
               onChange={(e) => setEmail(e.target.value)}
               required
             />
@@ -118,6 +130,7 @@ export const Signup = () => {
               type="text"
               placeholder="인증번호 6자리 입력"
               className="w-full p-4 bg-gray-100 rounded-2xl outline-none border-2 border-blue-400 focus:ring-2 focus:ring-blue-500 animate-fade-in"
+              value={code}
               onChange={(e) => setCode(e.target.value)}
               required
             />
@@ -126,6 +139,7 @@ export const Signup = () => {
             type="password"
             placeholder="비밀번호"
             className="w-full p-4 bg-gray-100 rounded-2xl outline-none focus:ring-2 focus:ring-blue-500 transition-all"
+            value={password}
             onChange={(e) => setPassword(e.target.value)}
             required
           />
