@@ -60,7 +60,7 @@ def send_verification_code(email: str):
     return {"message": "인증번호가 발송되었습니다."}
 
 # (2) 회원가입
-@app.post("/auth/signup")
+@app.post("/api/auth/signup")
 def signup(email: str, password: str, name: str, code: str, db: Session = Depends(get_db)):
     if verification_codes.get(email) != code:
         raise HTTPException(status_code=400, detail="인증번호가 일치하지 않습니다.")
@@ -80,7 +80,7 @@ def signup(email: str, password: str, name: str, code: str, db: Session = Depend
     return {"message": "회원가입이 완료되었습니다."}
 
 # (3) 로그인
-@app.post("/auth/login")
+@app.post("/api/auth/login")
 def login(email: str, password: str, db: Session = Depends(get_db)):
     user = db.query(models.User).filter(models.User.email == email).first()
     if not user or user.hashed_password != password:
@@ -96,7 +96,7 @@ def login(email: str, password: str, db: Session = Depends(get_db)):
 def get_all_routes(db: Session = Depends(get_db)):
     return db.query(models.BusRoute).all()
 
-@app.post("/bookings/reserve")
+@app.post("/api/bookings/reserve")
 def reserve_bus(route_id: int, user_id: int, db: Session = Depends(get_db)):
     user = db.query(models.User).filter(models.User.id == user_id).first()
     if not user or user.points < 3000:
