@@ -12,6 +12,7 @@ export const Signup = () => {
   // 환경 변수에서 베이스 URL 가져오기
   const API_BASE_URL = import.meta.env.VITE_API_URL || "";
 
+  // 1. 인증번호 발송 (기존 방식 유지 - 이메일만 파라미터로 전달)
   const handleSendCode = async () => {
     if (!email.endsWith("@cu.ac.kr")) {
       alert("학교 메일(@cu.ac.kr)만 사용 가능합니다.");
@@ -19,7 +20,6 @@ export const Signup = () => {
     }
     
     try {
-      // 쿼리 파라미터를 안전하게 인코딩하여 생성
       const params = new URLSearchParams({ email });
       const url = `${API_BASE_URL}/api/auth/send-code?${params.toString()}`;
       
@@ -44,30 +44,29 @@ export const Signup = () => {
     }
   };
 
+  // 2. 회원가입 제출 (중요: Body에 JSON 담아 보내기)
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
     try {
-      // 1. 백엔드 설계에 맞춰 모든 데이터를 쿼리 스트링으로 변환
-      // URL 끝에 /가 붙거나 오타가 나지 않도록 URLSearchParams 사용
-      const params = new URLSearchParams({
-        email: email,
-        password: password,
-        name: name,
-        code: code
-      });
+      // URL은 더 이상 파라미터를 붙이지 않고 깔끔하게 유지합니다.
+      const url = `${API_BASE_URL}/api/auth/signup`;
       
-      const url = `${API_BASE_URL}/api/auth/signup?${params.toString()}`;
-      
-      console.log("회원가입 요청 시도 (POST):", url);
+      console.log("회원가입 요청 시도 (Body 전송 방식)");
       
       const response = await fetch(url, {
-        method: "POST", // Method를 명시적으로 POST로 고정
+        method: "POST",
         headers: {
           "ngrok-skip-browser-warning": "69420",
-          "Content-Type": "application/json",
+          "Content-Type": "application/json", // JSON 형식을 서버에 알림
         },
-        // Body를 비워두더라도 Method가 POST이면 백엔드에서 정상 수신함
+        // 데이터를 JSON 문자열로 변환하여 Body에 담습니다.
+        body: JSON.stringify({
+          email: email,
+          code: code,
+          password: password,
+          name: name
+        }),
       });
 
       if (response.ok) {
@@ -76,7 +75,7 @@ export const Signup = () => {
       } else {
         const data = await response.json();
         console.warn("회원가입 거절 사유:", data.detail); 
-        alert(`회원가입 실패: ${data.detail}`);
+        alert(`회원가입 실패: ${data.detail || "정보를 확인해주세요."}`);
       }
     } catch (error) {
       console.error("가입 에러:", error);
