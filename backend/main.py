@@ -14,7 +14,7 @@ models.Base.metadata.create_all(bind=engine)
 
 app = FastAPI()
 
-# --- [1. CORS 설정 최적화] ---
+# --- [1. CORS 설정] ---
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["https://dcu-shuttle-bus.vercel.app"],
@@ -31,6 +31,7 @@ def get_db():
     finally:
         db.close()
 
+# SignupRequest 모델 정의는 유지하되, signup 함수 파라미터에서는 제거합니다.
 class SignupRequest(BaseModel):
     email: str
     code: str
@@ -99,7 +100,7 @@ def send_code(email: str):
         return {"status": "success", "message": "인증번호 발송 완료"}
     return {"status": "error", "message": "발송 실패"}
 
-# [수정됨] SignupRequest 모델을 Body로 명시하여 수신하도록 변경
+# [완전 수정] SignupRequest 흔적을 지우고 Request 객체로 직접 수신
 @app.post("/api/auth/signup")
 async def signup(request: Request, db: Session = Depends(get_db)):
     try:
@@ -118,32 +119,44 @@ async def signup(request: Request, db: Session = Depends(get_db)):
             print(f"❌ 데이터 누락됨: email={email}, code={code}, name={name}")
             return JSONResponse(
                 status_code=422,
-                content={"detail": "모든 필드를 입력해야 합니다."}
+                content={"detail": "모든 항목을 입력해주세요."}
             )
 
         # 4. 인증번호 검증
         saved_code = verification_codes.get(email)
         if not saved_code or str(saved_code) != str(code):
+            print(f"❌ 인증 실패: {email} (입력:{code} / 저장:{saved_code})")
             raise HTTPException(status_code=400, detail="인증번호가 틀렸거나 만료되었습니다.")
         
-        # 5. 중복 가입 및 유저 생성 (기존 로직)
+        # 5. 중복 가입 체크
         existing_user = db.query(models.User).filter(models.User.email == email).first()
         if existing_user:
             raise HTTPException(status_code=400, detail="이미 가입된 메일입니다.")
             
-        new_user = models.User(email=email, hashed_password=password, name=name, points=0)
+        # 6. 유저 생성 및 저장
+        new_user = models.User(
+            email=email, 
+            hashed_password=password, 
+            name=name, 
+            points=0
+        )
         db.add(new_user)
         db.commit()
         
         if email in verification_codes:
             del verification_codes[email]
             
+        print(f"✅ 회원가입 성공: {email}")
         return {"status": "success", "message": "회원가입 성공"}
 
     except Exception as e:
-        print(f"💥 서버 내부 에러: {str(e)}")
+        db.rollback()
+        print(f"💥 서버 내부 에러: {traceback.format_exc()}")
         if isinstance(e, HTTPException): raise e
-        return JSONResponse(status_code=500, content={"detail": f"서버 내부 에러: {str(e)}"})
+        return JSONResponse(
+            status_code=500, 
+            content={"detail": f"서버 처리 중 오류가 발생했습니다: {str(e)}"}
+        )
 
 @app.post("/api/auth/login")
 def login(data: LoginRequest, db: Session = Depends(get_db)):
