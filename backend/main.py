@@ -105,3 +105,26 @@ def reserve_bus(route_id: int, user_id: int, db: Session = Depends(get_db)):
     db.add(new_booking)
     db.commit()
     return {"message": "예약 완료"}
+# main.py 에 아래 내용들을 추가하거나 덮어쓰세요
+@app.get("/api/user/status")
+def get_user_status(user_id: int, db: Session = Depends(get_db)):
+    user = db.query(models.User).filter(models.User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="사용자를 찾을 수 없습니다.")
+    return {
+        "user_id": user.id,
+        "name": user.name,
+        "points": user.points,
+        "email": user.email
+    }
+
+@app.post("/api/charge/request")
+def charge_points(user_id: int, amount: int, db: Session = Depends(get_db)):
+    user = db.query(models.User).filter(models.User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="사용자를 찾을 수 없습니다.")
+    
+    # 실제로는 결제 검증 로직이 들어가야 함 (현재는 바로 충전)
+    user.points += amount
+    db.commit()
+    return {"message": f"{amount}포인트가 충전되었습니다.", "current_points": user.points}
