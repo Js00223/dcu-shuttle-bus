@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
-import api from "../api"; // 1. 우리가 만든 api 설정을 가져옵니다. (경로 확인 필요)
+import api from "../utils/api"; // 1. 우리가 만든 api 설정을 가져옵니다. (경로 확인 필요)
 
 export const Login = () => {
   const navigate = useNavigate();
