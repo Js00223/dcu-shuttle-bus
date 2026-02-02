@@ -15,7 +15,7 @@ DB_PATH = os.path.join(BASE_DIR, DB_NAME)
 
 # 4. SQLAlchemy용 데이터베이스 URL 설정
 # SQLite는 상대 경로보다 'sqlite:////경로' 식의 절대 경로가 안전합니다.
-SQLALCHEMY_DATABASE_URL = "postgresql+psycopg2://postgres:Js00334422@@@db.aocsrtgjxpdsxhwtxrfd.supabase.co:5432/postgres"
+SQLALCHEMY_DATABASE_URL = "postgresql+psycopg2://postgres:Js00334422%40%40@db.aocsrtgjxpdsxhwtxrfd.supabase.co:5432/postgres"
 
 engine = create_engine(
     SQLALCHEMY_DATABASE_URL, 
