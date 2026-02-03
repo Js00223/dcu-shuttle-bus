@@ -46,7 +46,6 @@ export const PointPage = () => {
     try {
       setLoading(true);
       
-      // 1. 로컬스토리지에서 유저 정보를 가져와 userId 정의
       const user = JSON.parse(localStorage.getItem("user") || "{}");
       const userId = user.user_id || user.id;
 
@@ -56,15 +55,14 @@ export const PointPage = () => {
         return;
       }
 
-      // 2. 서버 엔드포인트 호출 (main.py의 @app.get("/api/user/status")와 일치)
-      // 만약 api.ts의 baseURL에 /api가 없다면 아래처럼 "/user/status"로 적어야 합니다.
-      const response = await api.get("/api/user/status", {
+      // ✅ 수정: baseURL에 /api가 있으므로 앞에 '/'를 뺀 상대 경로 사용
+      // 결과: ...render.com/api + user/status = ...render.com/api/user/status
+      const response = await api.get("user/status", {
         params: { user_id: userId }
       }); 
       
       if (response.data) {
         setPoints(response.data.points || 0);
-        // 최신 정보를 로컬에도 저장
         localStorage.setItem("user", JSON.stringify(response.data));
       }
     } catch (error: any) {
@@ -110,8 +108,9 @@ export const PointPage = () => {
       IMP.request_pay(paymentData, async (rsp: IMPResponse) => {
         if (rsp.success) {
           try {
-            // ✅ 서버 main.py의 @app.post("/api/charge/request")와 일치
-            const response = await api.post("api/charge/request", null, {
+            // ✅ 수정: baseURL(/api)과 결합되도록 상대 경로 "charge/request" 사용
+            // 서버 main.py 설정에 따라 params 혹은 Body로 전달
+            const response = await api.post("charge/request", null, {
               params: { 
                 user_id: userId,
                 amount: amount 
@@ -171,7 +170,7 @@ export const PointPage = () => {
         ))}
       </div>
 
-      <button onClick={() => navigate("/")} className="mt-10 text-gray-400 font-bold text-sm underline">
+      <button onClick={() => navigate("/")} className="mt-10 text-gray-400 font-bold text-sm underline underline-offset-4">
         홈으로 돌아가기
       </button>
     </div>
