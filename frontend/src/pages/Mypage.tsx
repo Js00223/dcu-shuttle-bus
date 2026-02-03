@@ -4,7 +4,7 @@ import { logout } from "../utils/auth";
 
 // [추가] 백엔드 주소 정의 (PointAndPass.tsx와 동일해야 함)
 const BACKEND_URL =
-  "https://umbrellalike-multiseriate-cythia.ngrok-free.dev/api";
+  "https://dcu-shuttle-bus.onrender.com";
 
 export const MyPage = () => {
   const [studentId, setStudentId] = useState<string>("");
