@@ -47,7 +47,7 @@ export const PointPage = () => {
       }
 
       // ✅ /api 를 명시적으로 붙여서 404 방지
-      const response = await api.get("/user/status", {
+      const response = await api.get("user/status", {
         params: { user_id: userId }
       }); 
       
@@ -94,7 +94,7 @@ export const PointPage = () => {
         if (rsp.success) {
           try {
             // ✅ /api 를 명시적으로 붙여서 404 방지
-            const response = await api.post("/charge/request", null, {
+            const response = await api.post("charge/request", null, {
               params: { 
                 user_id: userId,
                 amount: amount 
