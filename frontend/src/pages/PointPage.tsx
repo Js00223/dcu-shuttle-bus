@@ -46,33 +46,29 @@ export const PointPage = () => {
     try {
       setLoading(true);
       
-      // 1. 로컬스토리지에서 유저 정보를 꺼내 userId를 확보합니다.
+      // 1. 로컬스토리지에서 유저 정보를 가져와 userId 정의
       const user = JSON.parse(localStorage.getItem("user") || "{}");
       const userId = user.user_id || user.id;
 
       if (!userId) {
-        console.warn("사용자 ID를 찾을 수 없어 로그인 페이지로 이동합니다.");
+        console.warn("로그인 정보가 없습니다.");
         navigate("/login");
         return;
       }
 
-      // 2. 서버 엔드포인트 호출 (/api/auth/me)
-      // ✅ params에 user_id를 실어 보내야 422 에러가 나지 않습니다.
-      const response = await api.get("/api/auth/me", {
+      // 2. 서버 엔드포인트 호출 (main.py의 @app.get("/api/user/status")와 일치)
+      // 만약 api.ts의 baseURL에 /api가 없다면 아래처럼 "/api/user/status"로 적어야 합니다.
+      const response = await api.get("/api/user/status", {
         params: { user_id: userId }
       }); 
       
       if (response.data) {
         setPoints(response.data.points || 0);
-        // 최신 정보를 로컬스토리지에도 동기화합니다.
+        // 최신 정보를 로컬에도 저장
         localStorage.setItem("user", JSON.stringify(response.data));
       }
     } catch (error: any) {
       console.error("포인트 로딩 실패:", error);
-      if (error.response?.status === 401) {
-        navigate("/login");
-        return;
-      }
       const savedUser = JSON.parse(localStorage.getItem("user") || "{}");
       setPoints(savedUser.points || 0);
     } finally {
@@ -93,13 +89,11 @@ export const PointPage = () => {
         return;
       }
 
-      // 아임포트 가맹점 식별코드
       IMP.init("imp75854740");
 
       const totalWithFee = amount + CHARGE_FEE;
       const orderId = `mid_${new Date().getTime()}`;
       
-      // 로컬스토리지에서 유저 정보 가져오기
       const user = JSON.parse(localStorage.getItem("user") || "{}");
       const userId = user.user_id || user.id;
 
@@ -116,9 +110,8 @@ export const PointPage = () => {
       IMP.request_pay(paymentData, async (rsp: IMPResponse) => {
         if (rsp.success) {
           try {
-            // ✅ 서버의 포인트 충전 엔드포인트 호출 (/api/points/charge)
-            // 서버 main.py의 charge_points 함수 인자에 맞춰 user_id와 amount를 보냅니다.
-            const response = await api.post("/api/points/charge", null, {
+            // ✅ 서버 main.py의 @app.post("/api/charge/request")와 일치
+            const response = await api.post("/api/charge/request", null, {
               params: { 
                 user_id: userId,
                 amount: amount 
@@ -127,16 +120,16 @@ export const PointPage = () => {
 
             if (response.status === 200) {
               alert(
-                `가상계좌 발급 성공!\n은행: ${rsp.vbank_name}\n계좌: ${rsp.vbank_num}\n입금 완료 시 포인트가 자동 충전됩니다.`
+                `가상계좌 발급 성공!\n은행: ${rsp.vbank_name}\n계좌: ${rsp.vbank_num}`
               );
-              fetchPoints(); // 성공 후 데이터 즉시 동기화
+              fetchPoints(); 
             }
           } catch (serverError: any) {
-            console.error("서버 반영 실패:", serverError);
-            alert("입금 정보 서버 등록에 실패했습니다.");
+            console.error("충전 요청 에러:", serverError);
+            alert("서버 등록에 실패했습니다.");
           }
         } else {
-          alert(`결제 취소/실패: ${rsp.error_msg}`);
+          alert(`결제 실패: ${rsp.error_msg}`);
         }
       });
     },
@@ -170,30 +163,17 @@ export const PointPage = () => {
             className="w-full py-5 bg-white border border-gray-100 rounded-2xl font-bold shadow-sm flex justify-between px-6 items-center hover:bg-blue-50 active:scale-[0.98] transition-all"
           >
             <div className="flex flex-col items-start">
-              <span className="text-gray-900">
-                {(amt + CHARGE_FEE).toLocaleString()}원
-              </span>
-              <span className="text-[10px] text-gray-400 font-medium tracking-tight">
-                가상계좌 수수료 포함
-              </span>
+              <span className="text-gray-900">{(amt + CHARGE_FEE).toLocaleString()}원</span>
+              <span className="text-[10px] text-gray-400 font-medium">가상계좌 수수료 포함</span>
             </div>
             <span className="text-blue-600">+{amt.toLocaleString()}P</span>
           </button>
         ))}
       </div>
 
-      <button
-        onClick={() => navigate("/")}
-        className="mt-10 text-gray-400 font-bold text-sm underline underline-offset-4 hover:text-gray-600"
-      >
+      <button onClick={() => navigate("/")} className="mt-10 text-gray-400 font-bold text-sm underline">
         홈으로 돌아가기
       </button>
-
-      <div className="mt-8 text-[11px] text-gray-400 text-center leading-relaxed font-medium">
-        충전 내역은 전산으로 관리되며,
-        <br />
-        입금 확인 즉시 포인트가 지급됩니다.
-      </div>
     </div>
   );
 };
