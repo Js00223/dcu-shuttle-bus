@@ -32,7 +32,7 @@ declare global {
 }
 
 // [핵심] 백엔드 주소 설정 (끝에 슬래시 없이)
-const BACKEND_URL = "https://dcu-shuttle-bus.onrender.com";
+const BACKEND_URL = "https://dcu-shuttle-bus.onrender.com/api";
 
 export const BusTrackingPage = ({ routeId }: { routeId: number }) => {
   const mapContainer = useRef<HTMLDivElement>(null);
@@ -85,7 +85,7 @@ export const BusTrackingPage = ({ routeId }: { routeId: number }) => {
 
           // API 요청 (백틱 기호와 변수 활용)
           const res = await fetch(
-            `${BACKEND_URL}/api/bus/track/${routeId}?user_lat=${lat}&user_lng=${lng}`,
+            `${BACKEND_URL}/bus/track/${routeId}?user_lat=${lat}&user_lng=${lng}`,
             {
               headers: {
                 "ngrok-skip-browser-warning": "69420",
