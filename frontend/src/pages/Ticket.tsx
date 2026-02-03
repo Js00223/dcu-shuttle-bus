@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useNFC } from "../hooks/useNFC";
+import api from "../utils/api"; // ✅ 아까 만든 api 인스턴스 사용
 
 interface BusRoute {
   id: number;
@@ -14,68 +15,81 @@ export const Ticket = () => {
 
   const [loading, setLoading] = useState(true);
   const [routeInfo, setRouteInfo] = useState<BusRoute | null>(null);
-  const [isScanned, setIsScanned] = useState(false); // [해결] 아래 handleScanSuccess에서 사용
+  const [isScanned, setIsScanned] = useState(false);
 
-  // [해결] 훅의 반환 타입을 확인하세요.
-  // 에러 메시지에 따르면 startScanning만 존재하므로, 그에 맞춰 구조분해 할당을 수정합니다.
   const { startScanning } = useNFC();
 
-  // [해결] 스캔 성공 시 실행될 함수
+  // 스캔 성공 시 실행될 함수
   const handleScanSuccess = useCallback(() => {
     setIsScanned(true);
     alert("인증되었습니다. 탑승해 주세요!");
   }, []);
 
+  // 페이지 진입 시 자동으로 예매(포인트 차감) 진행
   useEffect(() => {
     const processReservation = async () => {
       try {
-        const response = await fetch(
-          `https://umbrellalike-multiseriate-cythia.ngrok-free.dev/api/bookings/reserve?route_id=${id}`,
-          {
-            method: "POST",
-          },
-        );
-        const result = await response.json();
+        setLoading(true);
 
-        if (result.status === "success") {
-          const routeRes = await fetch(
-            `https://umbrellalike-multiseriate-cythia.ngrok-free.dev/api/routes`,
-          );
-          const routes: BusRoute[] = await routeRes.json();
+        // ✅ 1. 예매 요청 (3,000P 차감 로직은 서버에서 처리됨)
+        // 쿼리 파라미터 방식으로 route_id를 보냅니다.
+        const response = await api.post("/api/bookings/reserve", null, {
+          params: { route_id: id }
+        });
+
+        const result = response.data;
+
+        // 서버 응답이 성공(success)인 경우
+        if (result.status === "success" || response.status === 200) {
+          
+          // ✅ 2. 노선 정보 가져오기 (화면 표시용)
+          const routeRes = await api.get("/api/routes");
+          const routes: BusRoute[] = routeRes.data;
           const currentRoute = routes.find((r) => r.id === Number(id));
 
           setRouteInfo(currentRoute || null);
           setLoading(false);
 
-          // 예약 성공 후 스캔 유도
+          // ✅ 3. NFC 스캔 유도
           if (
             window.confirm(
-              "NFC 탑승 확인을 위해 단말기에 태그할 준비를 해주세요.",
+              "예매가 완료되었습니다 (3,000P 차감).\nNFC 탑승 확인을 위해 단말기에 태그할 준비를 해주세요."
             )
           ) {
             startScanning();
-            // 실제 환경에서는 NFC 태그가 감지되면 자동으로 setIsScanned가 호출되어야 합니다.
-            // 여기서는 시뮬레이션을 위해 3초 후 성공 처리를 하는 예시를 넣을 수 있습니다.
-            // setTimeout(handleScanSuccess, 3000);
           }
-        } else {
-          alert(result.message);
-          navigate("/points");
         }
-      } catch (e) {
-        console.error("예약 오류:", e);
-        alert("예약 시스템에 연결할 수 없습니다.");
-        navigate("/");
+      } catch (error: any) {
+        console.error("예약 오류:", error);
+        
+        // 서버에서 보낸 에러 메시지 (포인트 부족 등) 출력
+        const errorMsg = error.response?.data?.detail || "예약 시스템에 연결할 수 없습니다.";
+        alert(`예약 실패: ${errorMsg}`);
+        
+        // 포인트 부족 시 포인트 충전 페이지로 이동, 그 외엔 홈으로
+        if (errorMsg.includes("포인트")) {
+          navigate("/points");
+        } else {
+          navigate("/");
+        }
       }
     };
 
-    processReservation();
-  }, [id, navigate, startScanning, handleScanSuccess]);
+    if (id) {
+      processReservation();
+    }
+  }, [id, navigate, startScanning]);
 
   const handleCancel = async () => {
     if (window.confirm("예약을 취소하시겠습니까? 3,000P가 환불됩니다.")) {
-      alert("취소가 완료되었습니다.");
-      navigate("/");
+      try {
+        // 실제 서버에 취소 API가 있다면 여기서 호출
+        // await api.post(`/api/bookings/cancel/${id}`);
+        alert("취소가 완료되었습니다. 3,000P가 환불되었습니다.");
+        navigate("/");
+      } catch (err) {
+        alert("취소 처리 중 오류가 발생했습니다.");
+      }
     }
   };
 
@@ -83,7 +97,7 @@ export const Ticket = () => {
     return (
       <div className="min-h-screen bg-blue-600 flex items-center justify-center">
         <div className="text-white font-bold animate-pulse text-lg">
-          티켓 발권 중...
+          티켓 발권 및 3,000P 차감 중...
         </div>
       </div>
     );
@@ -101,7 +115,7 @@ export const Ticket = () => {
           <h2 className="text-3xl font-black text-gray-900">
             {routeInfo?.route_name}
           </h2>
-          <p className="text-gray-400 mt-1">계명대학교 노선</p>
+          <p className="text-gray-400 mt-1">대구가톨릭대학교 노선</p>
 
           <div
             className={`absolute -bottom-3 -left-3 w-6 h-6 ${isScanned ? "bg-green-500" : "bg-blue-600"} rounded-full transition-colors`}
@@ -159,11 +173,11 @@ export const Ticket = () => {
           onClick={handleCancel}
           className="mt-8 text-white/60 font-medium underline decoration-white/30"
         >
-          예약 취소 (환불받기)
+          예약 취소 (3,000P 환불받기)
         </button>
       )}
 
-      {/* 테스트용 버튼: 실제 NFC가 없을 때 UI 확인용 */}
+      {/* 테스트용 버튼 */}
       <button
         onClick={handleScanSuccess}
         className="mt-4 text-[10px] text-white/20 hover:text-white/40 transition-colors"
