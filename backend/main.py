@@ -136,14 +136,16 @@ def login(email: str, password: str, db: Session = Depends(get_db)):
         raise HTTPException(status_code=401, detail="정보가 불일치합니다.")
     return {"user_id": user.id, "name": user.name, "points": user.points, "status": "success"}
 
-# (5) 버스 위치 추적 (실제 데이터 기반 + 404 방지 파라미터 적용)
+# (5) 버스 위치 추적 (main.py 내 위치 확인)
 @app.get("/api/bus/track/{bus_id}")
-def get_bus_location(bus_id: int, user_lat: float, user_lng: float):
-    # ❌ 랜덤 생성 제거 -> ✅ 실제 저장된 위치 데이터 조회
+def get_bus_location(
+    bus_id: int, 
+    user_lat: float,  # ✅ 이 부분이 없으면 404 발생
+    user_lng: float   # ✅ 이 부분이 없으면 404 발생
+):
     bus_info = bus_realtime_locations.get(bus_id)
-    
     if not bus_info:
-        raise HTTPException(status_code=404, detail="실시간 위치를 제공하지 않는 버스입니다.")
+        raise HTTPException(status_code=404, detail="Bus not found")
         
     return {
         "bus_id": bus_id,
