@@ -55,8 +55,7 @@ export const PointPage = () => {
         return;
       }
 
-      // ✅ 수정: baseURL에 /api가 있으므로 앞에 '/'를 뺀 상대 경로 사용
-      // 결과: ...render.com/api + user/status = ...render.com/api/user/status
+      // ✅ 수정 핵심: 앞에 '/'를 제거하여 baseURL의 /api를 유지합니다.
       const response = await api.get("user/status", {
         params: { user_id: userId }
       }); 
@@ -66,7 +65,7 @@ export const PointPage = () => {
         localStorage.setItem("user", JSON.stringify(response.data));
       }
     } catch (error: any) {
-      console.error("포인트 로딩 실패:", error);
+      console.error("데이터 동기화 실패:", error);
       const savedUser = JSON.parse(localStorage.getItem("user") || "{}");
       setPoints(savedUser.points || 0);
     } finally {
@@ -108,8 +107,8 @@ export const PointPage = () => {
       IMP.request_pay(paymentData, async (rsp: IMPResponse) => {
         if (rsp.success) {
           try {
-            // ✅ 수정: baseURL(/api)과 결합되도록 상대 경로 "charge/request" 사용
-            // 서버 main.py 설정에 따라 params 혹은 Body로 전달
+            // ✅ 수정 핵심: "charge/request" (슬래시 없음)
+            // 서버 main.py 설정에 따라 params로 전달
             const response = await api.post("charge/request", null, {
               params: { 
                 user_id: userId,
@@ -124,7 +123,7 @@ export const PointPage = () => {
               fetchPoints(); 
             }
           } catch (serverError: any) {
-            console.error("충전 요청 에러:", serverError);
+            console.error("충전 요청 에러 상세:", serverError);
             alert("서버 등록에 실패했습니다.");
           }
         } else {
