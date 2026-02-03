@@ -33,7 +33,7 @@ export const Ticket = () => {
 
         // ✅ 1. 예매 요청 (3,000P 차감 로직은 서버에서 처리됨)
         // 쿼리 파라미터 방식으로 route_id를 보냅니다.
-        const response = await api.post("/api/bookings/reserve", null, {
+        const response = await api.post("/bookings/reserve", null, {
           params: { route_id: id }
         });
 
