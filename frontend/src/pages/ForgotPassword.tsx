@@ -18,7 +18,7 @@ export const ForgotPassword = () => {
 
     try {
       // ✅ api 인스턴스 사용 및 쿼리 파라미터 전달
-      const response = await api.post("/api/auth/send-code", null, {
+      const response = await api.post("auth/send-code", null, {
         params: { email: email.trim() }
       });
 
