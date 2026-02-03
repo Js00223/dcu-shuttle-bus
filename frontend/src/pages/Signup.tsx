@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
+import api from "../utils/api"; // ✅ api 인스턴스 가져오기
 
 export const Signup = () => {
   const navigate = useNavigate();
@@ -9,9 +10,6 @@ export const Signup = () => {
   const [code, setCode] = useState("");
   const [isSent, setIsSent] = useState(false);
 
-  // 환경 변수 확인 (Vercel 설정 확인 필요)
- const API_BASE_URL = "https://umbrellalike-multiseriate-cythia.ngrok-free.dev";
-
   // 1. 인증번호 발송 함수
   const handleSendCode = async () => {
     if (!email.endsWith("@cu.ac.kr")) {
@@ -20,25 +18,19 @@ export const Signup = () => {
     }
     
     try {
-      const url = `${API_BASE_URL}/api/auth/send-code?email=${encodeURIComponent(email)}`;
-      
-      const response = await fetch(url, { 
-        method: "POST",
-        headers: {
-          "ngrok-skip-browser-warning": "69420",
-        },
+      // ✅ api 인스턴스 사용 (쿼리 파라미터 방식)
+      const response = await api.post("/api/auth/send-code", null, {
+        params: { email: email.trim() }
       });
 
-      if (response.ok) {
+      if (response.status === 200) {
         setIsSent(true);
         alert("인증번호가 발송되었습니다. 메일함을 확인해주세요!");
-      } else {
-        const errorData = await response.json();
-        alert(`발송 실패: ${errorData.detail || "알 수 없는 에러"}`);
       }
-    } catch (error) {
-      console.error("네트워크 에러 (발송):", error);
-      alert("서버와 연결할 수 없습니다.");
+    } catch (error: any) {
+      console.error("발송 에러:", error);
+      const errorMsg = error.response?.data?.detail || "알 수 없는 에러";
+      alert(`발송 실패: ${errorMsg}`);
     }
   };
 
@@ -46,7 +38,6 @@ export const Signup = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    // 전송 데이터 객체 생성 및 공백 제거
     const signupData = {
       email: email.trim(),
       code: code.trim(),
@@ -54,42 +45,27 @@ export const Signup = () => {
       name: name.trim()
     };
 
-    console.log("📤 서버로 전송할 데이터:", signupData);
-    
     try {
-      const url = `${API_BASE_URL}/api/auth/signup`;
-      
-      const response = await fetch(url, {
-        method: "POST",
-        headers: {
-          "Accept": "application/json",
-          "Content-Type": "application/json",
-          "ngrok-skip-browser-warning": "69420",
-        },
-        body: JSON.stringify(signupData),
-      });
+      // ✅ api 인스턴스 사용 (JSON Body 방식)
+      const response = await api.post("/api/auth/signup", signupData);
 
-      const result = await response.json();
-
-      if (response.ok) {
+      if (response.status === 200 || response.status === 201) {
         alert("🎉 회원가입 성공! 로그인 페이지로 이동합니다.");
         navigate("/login");
-      } else {
-        console.error("❌ 서버 응답 에러 상세:", result);
-        
-        let errorMsg = "정보를 다시 확인해주세요.";
-        // FastAPI의 422 에러(배열 형태)를 읽기 쉽게 변환
-        if (result.detail && Array.isArray(result.detail)) {
-          errorMsg = result.detail.map((err: any) => `${err.loc[1]}: ${err.msg}`).join("\n");
-        } else if (typeof result.detail === 'string') {
-          errorMsg = result.detail;
-        }
-        
-        alert(`회원가입 실패:\n${errorMsg}`);
       }
-    } catch (error) {
-      console.error("가입 에러:", error);
-      alert("서버와 통신할 수 없습니다. 잠시 후 다시 시도해주세요.");
+    } catch (error: any) {
+      console.error("가입 에러 상세:", error.response?.data);
+      
+      const result = error.response?.data;
+      let errorMsg = "정보를 다시 확인해주세요.";
+      
+      if (result?.detail && Array.isArray(result.detail)) {
+        errorMsg = result.detail.map((err: any) => `${err.loc[1]}: ${err.msg}`).join("\n");
+      } else if (typeof result?.detail === 'string') {
+        errorMsg = result.detail;
+      }
+      
+      alert(`회원가입 실패:\n${errorMsg}`);
     }
   };
 
@@ -98,7 +74,6 @@ export const Signup = () => {
       <div className="bg-white w-full max-w-md p-8 rounded-[2.5rem] shadow-xl">
         <h2 className="text-3xl font-black mb-6 text-gray-900">회원가입</h2>
         <form onSubmit={handleSubmit} className="space-y-4">
-          {/* 이름 입력 */}
           <input
             type="text"
             placeholder="이름"
@@ -108,7 +83,6 @@ export const Signup = () => {
             required
           />
           
-          {/* 이메일 입력 및 인증 버튼 */}
           <div className="flex gap-2">
             <input
               type="email"
@@ -127,7 +101,6 @@ export const Signup = () => {
             </button>
           </div>
 
-          {/* 인증번호 입력창 (발송 후에만 표시) */}
           {isSent && (
             <input
               type="text"
@@ -139,7 +112,6 @@ export const Signup = () => {
             />
           )}
 
-          {/* 비밀번호 입력 */}
           <input
             type="password"
             placeholder="비밀번호"
@@ -149,7 +121,6 @@ export const Signup = () => {
             required
           />
 
-          {/* 제출 버튼 */}
           <button
             type="submit"
             className="w-full bg-blue-600 hover:bg-blue-700 text-white p-4 rounded-2xl font-black text-lg mt-4 shadow-lg shadow-blue-200 transition-all active:scale-95"
