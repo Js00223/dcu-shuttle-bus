@@ -41,16 +41,34 @@ export const PointPage = () => {
   const [points, setPoints] = useState<number>(0);
   const [loading, setLoading] = useState<boolean>(true);
 
-  // 서버로부터 포인트 데이터 가져오기
+  // [기능 1] 서버로부터 포인트 데이터 가져오기
   const fetchPoints = useCallback(async () => {
     try {
       setLoading(true);
-      // ✅ 서버의 실제 엔드포인트가 /api/auth/me 인지 확인 필요 (보통 내 정보를 가져올 때 포인트도 포함됨)
-      const response = await api.get("/api/auth/me"); 
-      setPoints(response.data.points || 0);
+      
+      // 1. 로컬스토리지에서 유저 정보를 꺼내 userId를 확보합니다.
+      const user = JSON.parse(localStorage.getItem("user") || "{}");
+      const userId = user.user_id || user.id;
+
+      if (!userId) {
+        console.warn("사용자 ID를 찾을 수 없어 로그인 페이지로 이동합니다.");
+        navigate("/login");
+        return;
+      }
+
+      // 2. 서버 엔드포인트 호출 (/api/auth/me)
+      // ✅ params에 user_id를 실어 보내야 422 에러가 나지 않습니다.
+      const response = await api.get("/api/auth/me", {
+        params: { user_id: userId }
+      }); 
+      
+      if (response.data) {
+        setPoints(response.data.points || 0);
+        // 최신 정보를 로컬스토리지에도 동기화합니다.
+        localStorage.setItem("user", JSON.stringify(response.data));
+      }
     } catch (error: any) {
       console.error("포인트 로딩 실패:", error);
-      // 토큰 만료 등의 에러인 경우 로그인 페이지로 유도할 수 있음
       if (error.response?.status === 401) {
         navigate("/login");
         return;
@@ -66,6 +84,7 @@ export const PointPage = () => {
     fetchPoints();
   }, [fetchPoints]);
 
+  // [기능 2] 결제 핸들러
   const handlePayment = useCallback(
     (amount: number) => {
       const { IMP } = window;
@@ -79,40 +98,42 @@ export const PointPage = () => {
 
       const totalWithFee = amount + CHARGE_FEE;
       const orderId = `mid_${new Date().getTime()}`;
+      
+      // 로컬스토리지에서 유저 정보 가져오기
       const user = JSON.parse(localStorage.getItem("user") || "{}");
+      const userId = user.user_id || user.id;
 
       const paymentData: PaymentData = {
-        pg: "kcp.IP06C", // 실제 승인된 PG사 코드로 수정 필요할 수 있음
+        pg: "kcp.IP06C", 
         pay_method: "vbank", 
         merchant_uid: orderId,
         amount: totalWithFee,
         name: `${amount.toLocaleString()} 포인트 충전`,
-        buyer_name: user.username || "사용자", // 'name' 대신 서버 모델 필드인 'username' 권장
+        buyer_name: user.name || "사용자", 
         buyer_tel: "010-0000-0000",
       };
 
       IMP.request_pay(paymentData, async (rsp: IMPResponse) => {
         if (rsp.success) {
           try {
-            // ✅ 서버 API 엔드포인트 매칭 확인 (/api/points/charge)
+            // ✅ 서버의 포인트 충전 엔드포인트 호출 (/api/points/charge)
+            // 서버 main.py의 charge_points 함수 인자에 맞춰 user_id와 amount를 보냅니다.
             const response = await api.post("/api/points/charge", null, {
-              params: { amount: amount } // 서버가 쿼리 파라미터로 받는지 확인
+              params: { 
+                user_id: userId,
+                amount: amount 
+              }
             });
 
             if (response.status === 200) {
               alert(
                 `가상계좌 발급 성공!\n은행: ${rsp.vbank_name}\n계좌: ${rsp.vbank_num}\n입금 완료 시 포인트가 자동 충전됩니다.`
               );
-              
-              // 로컬 데이터 동기화
-              const updatedUser = { ...user, points: response.data.points };
-              localStorage.setItem("user", JSON.stringify(updatedUser));
-              
-              fetchPoints();
+              fetchPoints(); // 성공 후 데이터 즉시 동기화
             }
           } catch (serverError: any) {
             console.error("서버 반영 실패:", serverError);
-            alert("입금 정보 서버 등록에 실패했습니다. 고객센터로 문의해주세요.");
+            alert("입금 정보 서버 등록에 실패했습니다.");
           }
         } else {
           alert(`결제 취소/실패: ${rsp.error_msg}`);
