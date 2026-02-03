@@ -5,7 +5,7 @@ import axios from "axios";
 // export const BACKEND_URL = "https://umbrellalike-multiseriate-cythia.ngrok-free.dev";
 
 // ✅ 새로운 Render 주소 (CORS 문제 해결 및 24시간 가동)
-export const BACKEND_URL = "https://dcu-shuttle-bus.onrender.com/api/"; 
+export const BACKEND_URL = "https://dcu-shuttle-bus.onrender.com"; 
 
 const api = axios.create({
   baseURL: BACKEND_URL,
