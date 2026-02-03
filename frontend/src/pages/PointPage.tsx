@@ -111,7 +111,7 @@ export const PointPage = () => {
         if (rsp.success) {
           try {
             // ✅ 서버 main.py의 @app.post("/api/charge/request")와 일치
-            const response = await api.post("/charge/request", null, {
+            const response = await api.post("api/charge/request", null, {
               params: { 
                 user_id: userId,
                 amount: amount 
