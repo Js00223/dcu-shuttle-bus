@@ -57,7 +57,7 @@ export const PointPage = () => {
       }
 
       // 2. 서버 엔드포인트 호출 (main.py의 @app.get("/api/user/status")와 일치)
-      // 만약 api.ts의 baseURL에 /api가 없다면 아래처럼 "/api/user/status"로 적어야 합니다.
+      // 만약 api.ts의 baseURL에 /api가 없다면 아래처럼 "/user/status"로 적어야 합니다.
       const response = await api.get("/api/user/status", {
         params: { user_id: userId }
       }); 
@@ -111,7 +111,7 @@ export const PointPage = () => {
         if (rsp.success) {
           try {
             // ✅ 서버 main.py의 @app.post("/api/charge/request")와 일치
-            const response = await api.post("/api/charge/request", null, {
+            const response = await api.post("/charge/request", null, {
               params: { 
                 user_id: userId,
                 amount: amount 
