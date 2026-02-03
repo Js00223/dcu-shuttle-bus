@@ -136,6 +136,11 @@ def login(email: str, password: str, db: Session = Depends(get_db)):
         raise HTTPException(status_code=401, detail="정보가 불일치합니다.")
     return {"user_id": user.id, "name": user.name, "points": user.points, "status": "success"}
 
+#노선조회
+@app.get("/api/routes") # 👈 반드시 /api/가 포함되어야 함
+def get_all_routes(db: Session = Depends(get_db)):
+    return db.query(models.BusRoute).all()
+
 # (5) 버스 위치 추적 (main.py 내 위치 확인)
 @app.get("/api/bus/track/{bus_id}")
 def get_bus_location(
