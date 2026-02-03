@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
+import api from "../utils/api"; // ✅ api 인스턴스 가져오기
 
 export const ForgotPassword = () => {
   const navigate = useNavigate();
@@ -8,36 +9,49 @@ export const ForgotPassword = () => {
   const [newPassword, setNewPassword] = useState("");
   const [isSent, setIsSent] = useState(false);
 
+  // 1. 인증번호 발송 함수
   const handleSendCode = async () => {
     if (!email.endsWith("@cu.ac.kr")) {
       alert("학교 메일(@cu.ac.kr)을 입력해주세요.");
       return;
     }
-    const res = await fetch(
-      `https://umbrellalike-multiseriate-cythia.ngrok-free.dev/apimultiseriate-cythia.ngrok-free.dev/api/auth/send-code?email=${email}`,
-      { method: "POST" },
-    );
-    if (res.ok) {
-      setIsSent(true);
-      alert("인증번호가 발송되었습니다. 터미널을 확인하세요.");
+
+    try {
+      // ✅ api 인스턴스 사용 및 쿼리 파라미터 전달
+      const response = await api.post("/api/auth/send-code", null, {
+        params: { email: email.trim() }
+      });
+
+      if (response.status === 200) {
+        setIsSent(true);
+        alert("인증번호가 발송되었습니다. 메일함을 확인해주세요!");
+      }
+    } catch (error: any) {
+      console.error("발송 에러:", error);
+      alert(error.response?.data?.detail || "인증번호 발송에 실패했습니다.");
     }
   };
 
+  // 2. 비밀번호 재설정 제출 함수
   const handleResetPassword = async (e: React.FormEvent) => {
     e.preventDefault();
-    const res = await fetch(
-      `https://umbrellalike-multiseriate-cythia.ngrok-free.dev/apimultiseriate-cythia.ngrok-free.dev/api/auth/reset-password?email=${email}&code=${code}&new_password=${newPassword}`,
-      {
-        method: "POST",
-      },
-    );
+    try {
+      // ✅ 꼬여있던 ngrok 주소 제거 및 서버 형식에 맞춰 params로 전달
+      const response = await api.post("/api/auth/reset-password", null, {
+        params: {
+          email: email.trim(),
+          code: code.trim(),
+          new_password: newPassword
+        }
+      });
 
-    if (res.ok) {
-      alert("비밀번호가 변경되었습니다. 새 비밀번호로 로그인해주세요.");
-      navigate("/login");
-    } else {
-      const err = await res.json();
-      alert(err.detail);
+      if (response.status === 200) {
+        alert("비밀번호가 변경되었습니다. 새 비밀번호로 로그인해주세요.");
+        navigate("/login");
+      }
+    } catch (error: any) {
+      console.error("비밀번호 재설정 에러:", error);
+      alert(error.response?.data?.detail || "비밀번호 변경에 실패했습니다.");
     }
   };
 
@@ -55,6 +69,7 @@ export const ForgotPassword = () => {
               type="email"
               placeholder="학번@cu.ac.kr"
               className="flex-1 p-4 bg-gray-100 rounded-2xl outline-none"
+              value={email}
               onChange={(e) => setEmail(e.target.value)}
               required
             />
@@ -73,6 +88,7 @@ export const ForgotPassword = () => {
                 type="text"
                 placeholder="인증번호 6자리"
                 className="w-full p-4 bg-gray-100 rounded-2xl outline-none border-2 border-blue-100 animate-in fade-in"
+                value={code}
                 onChange={(e) => setCode(e.target.value)}
                 required
               />
@@ -80,6 +96,7 @@ export const ForgotPassword = () => {
                 type="password"
                 placeholder="새로운 비밀번호 입력"
                 className="w-full p-4 bg-gray-100 rounded-2xl outline-none animate-in fade-in"
+                value={newPassword}
                 onChange={(e) => setNewPassword(e.target.value)}
                 required
               />
