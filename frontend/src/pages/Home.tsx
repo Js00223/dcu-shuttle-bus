@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { RouteItem } from "../components/RouteItem";
 import { Search } from "lucide-react";
+import api from "../utils/api"; // ✅ 아까 만든 api 인스턴스 가져오기
 
 // 노선 데이터 타입 정의
 interface BusRoute {
@@ -30,27 +31,14 @@ export const Home = () => {
       try {
         setIsLoading(true);
 
-        // 환경 변수에서 베이스 URL을 가져옵니다.
-        // VITE_API_URL은 .env 파일에 정의되어 있어야 합니다.
-        const API_BASE_URL = import.meta.env.VITE_API_URL || "";
-
-        // 캐시 방지를 위해 URL 뒤에 현재 시간을 파라미터로 추가합니다.
-        const url = `${API_BASE_URL}/api/routes?t=${Date.now()}`;
-
-        const response = await fetch(url, {
-          method: "GET",
-          headers: {
-            // ngrok 경고 페이지를 건너뛰기 위한 필수 헤더
-            "ngrok-skip-browser-warning": "69420",
-            "Content-Type": "application/json",
-          },
+        // ✅ fetch 대신 api.get을 사용합니다.
+        // api.ts에 baseURL이 설정되어 있으므로 '/api/routes'만 적으면 됩니다.
+        const response = await api.get("/api/routes", {
+          params: { t: Date.now() } // 캐시 방지용 파라미터
         });
 
-        if (!response.ok) {
-          throw new Error(`HTTP error! status: ${response.status}`);
-        }
-
-        const data = await response.json();
+        // axios는 response.data에 실제 데이터가 들어있습니다.
+        const data = response.data;
         setRoutes(Array.isArray(data) ? data : []);
       } catch (error) {
         console.error("노선 불러오기 실패:", error);
