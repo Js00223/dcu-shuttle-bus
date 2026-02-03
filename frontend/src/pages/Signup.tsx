@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import api from "../utils/api"; // ✅ api 인스턴스 가져오기
+import api from "../utils/api"; 
 
 export const Signup = () => {
   const navigate = useNavigate();
@@ -18,7 +18,6 @@ export const Signup = () => {
     }
     
     try {
-      // ✅ api 인스턴스 사용 (쿼리 파라미터 방식)
       const response = await api.post("/api/auth/send-code", null, {
         params: { email: email.trim() }
       });
@@ -29,38 +28,40 @@ export const Signup = () => {
       }
     } catch (error: any) {
       console.error("발송 에러:", error);
-      const errorMsg = error.response?.data?.detail || "알 수 없는 에러";
-      alert(`발송 실패: ${errorMsg}`);
+      alert(`발송 실패: ${error.response?.data?.detail || "알 수 없는 에러"}`);
     }
   };
 
-  // 2. 회원가입 제출 함수
+  // 2. 회원가입 제출 함수 [핵심 수정 부분]
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    const signupData = {
-      email: email.trim(),
-      code: code.trim(),
-      password: password,
-      name: name.trim()
-    };
-
     try {
-      // ✅ api 인스턴스 사용 (JSON Body 방식)
-      const response = await api.post("/api/auth/signup", signupData);
+      // 서버가 (email: str, code: str, password: str, name: str) 처럼 인자를 받을 경우,
+      // 아래와 같이 params에 담아서 보내야 422 에러가 나지 않습니다.
+      const response = await api.post("/api/auth/signup", null, {
+        params: {
+          email: email.trim(),
+          code: code.trim(),
+          password: password,
+          name: name.trim()
+        }
+      });
 
       if (response.status === 200 || response.status === 201) {
         alert("🎉 회원가입 성공! 로그인 페이지로 이동합니다.");
         navigate("/login");
       }
     } catch (error: any) {
+      // 422 에러가 나면 콘솔에 어떤 데이터가 잘못됐는지 출력됩니다.
       console.error("가입 에러 상세:", error.response?.data);
       
       const result = error.response?.data;
       let errorMsg = "정보를 다시 확인해주세요.";
       
       if (result?.detail && Array.isArray(result.detail)) {
-        errorMsg = result.detail.map((err: any) => `${err.loc[1]}: ${err.msg}`).join("\n");
+        // 어느 필드(email 등)가 왜 틀렸는지 상세히 보여줍니다.
+        errorMsg = result.detail.map((err: any) => `${err.loc[err.loc.length - 1]}: ${err.msg}`).join("\n");
       } else if (typeof result?.detail === 'string') {
         errorMsg = result.detail;
       }
