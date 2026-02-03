@@ -19,7 +19,7 @@ export const MyPage = () => {
   const fetchUserData = useCallback(async () => {
     try {
       setLoading(true);
-      const response = await axios.get(`${BACKEND_URL}/user/status`, {
+      const response = await axios.get(`${BACKEND_URL}/api/user/status`, {
         // [수정] 전체 URL 사용
         headers: {
           Authorization: `Bearer ${localStorage.getItem("token")}`,
