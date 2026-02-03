@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import axios from "axios";
 import { logout } from "../utils/auth";
+import api from "../utils/api";
 
 // [추가] 백엔드 주소 정의 (PointAndPass.tsx와 동일해야 함)
 const BACKEND_URL =
