@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
-import api from "../utils/api"; // 1. api 인스턴스 사용
+import api from "../utils/api"; // api 인스턴스 사용
 
 export const Login = () => {
   const navigate = useNavigate();
@@ -10,18 +10,20 @@ export const Login = () => {
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      // 2. 서버의 LoginRequest 모델(email, password)과 정확히 일치하게 데이터를 보냅니다.
-      const response = await api.post("/api/auth/login", {
-        email: email.trim(), // 공백으로 인한 422 에러 방지
-        password: password,
+      // [핵심 수정] 서버가 JSON Body가 아닌 쿼리 파라미터를 원하므로 
+      // 데이터를 두 번째 인자(Body)가 아닌 세 번째 인자의 params에 담아 보냅니다.
+      const response = await api.post("/api/auth/login", null, {
+        params: {
+          email: email.trim(),
+          password: password,
+        },
       });
 
-      // axios 응답 데이터 추출
       const userData = response.data;
 
-      // 3. 데이터 저장 (토큰 및 유저 정보)
-      const tokenValue =
-        userData.token || userData.access_token || "login_success_token";
+      // 데이터 저장 (토큰 및 유저 정보)
+      // 서버 응답에 token이 없다면 기본값 처리
+      const tokenValue = userData.token || userData.access_token || "login_success_token";
 
       localStorage.setItem("token", tokenValue);
       localStorage.setItem("user", JSON.stringify(userData));
@@ -32,20 +34,13 @@ export const Login = () => {
 
       alert(`${userData.name || "사용자"}님, 환영합니다!`);
 
-      // 4. 페이지 이동 및 갱신
       navigate("/");
       window.location.reload();
     } catch (err: any) {
-      console.error("로그인 에러 상세:", err.response?.data); // 422 에러 원인 파악용
+      console.error("로그인 에러:", err);
       
-      // 서버에서 보낸 에러 메시지가 배열 형태(FastAPI 기본)일 경우를 대비한 처리
-      let errorMessage = "로그인 정보가 올바르지 않거나 서버 오류가 발생했습니다.";
-      
-      if (err.response?.data?.detail) {
-        const detail = err.response.data.detail;
-        errorMessage = typeof detail === "string" ? detail : detail[0]?.msg || errorMessage;
-      }
-      
+      // 서버에서 보낸 에러 메시지(401 등)가 있으면 보여줌
+      const errorMessage = err.response?.data?.detail || "로그인 정보가 올바르지 않습니다.";
       alert(errorMessage);
     }
   };
