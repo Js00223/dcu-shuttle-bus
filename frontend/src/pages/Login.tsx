@@ -10,9 +10,9 @@ export const Login = () => {
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      // 2. 꼬여있던 URL을 정리하고, 데이터를 JSON Body로 전송합니다.
+      // 2. 서버의 LoginRequest 모델(email, password)과 정확히 일치하게 데이터를 보냅니다.
       const response = await api.post("/api/auth/login", {
-        email: email,
+        email: email.trim(), // 공백으로 인한 422 에러 방지
         password: password,
       });
 
@@ -36,12 +36,16 @@ export const Login = () => {
       navigate("/");
       window.location.reload();
     } catch (err: any) {
-      console.error("로그인 에러:", err);
+      console.error("로그인 에러 상세:", err.response?.data); // 422 에러 원인 파악용
       
-      // 서버에서 보낸 에러 메시지 추출
-      const errorMessage =
-        err.response?.data?.detail ||
-        "로그인 정보가 올바르지 않거나 서버 오류가 발생했습니다.";
+      // 서버에서 보낸 에러 메시지가 배열 형태(FastAPI 기본)일 경우를 대비한 처리
+      let errorMessage = "로그인 정보가 올바르지 않거나 서버 오류가 발생했습니다.";
+      
+      if (err.response?.data?.detail) {
+        const detail = err.response.data.detail;
+        errorMessage = typeof detail === "string" ? detail : detail[0]?.msg || errorMessage;
+      }
+      
       alert(errorMessage);
     }
   };
