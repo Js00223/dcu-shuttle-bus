@@ -35,6 +35,9 @@ export const PointPage = () => {
   const [points, setPoints] = useState<number>(0);
   const [loading, setLoading] = useState<boolean>(true);
 
+  // 서버의 실제 도메인 주소 (이걸 직접 사용합니다)
+  const SERVER_URL = "https://dcu-shuttle-bus.onrender.com/api";
+
   const fetchPoints = useCallback(async () => {
     try {
       setLoading(true);
@@ -46,8 +49,8 @@ export const PointPage = () => {
         return;
       }
 
-      // ✅ /api 를 명시적으로 붙여서 404 방지
-      const response = await api.get("user/status", {
+      // ✅ baseURL 설정을 무시하고 전체 주소를 직접 때려 넣습니다.
+      const response = await api.get(`${SERVER_URL}/user/status`, {
         params: { user_id: userId }
       }); 
       
@@ -93,8 +96,8 @@ export const PointPage = () => {
       IMP.request_pay(paymentData, async (rsp: IMPResponse) => {
         if (rsp.success) {
           try {
-            // ✅ /api 를 명시적으로 붙여서 404 방지
-            const response = await api.post("charge/request", null, {
+            // ✅ 여기도 전체 주소를 직접 사용합니다.
+            const response = await api.post(`${SERVER_URL}/charge/request`, null, {
               params: { 
                 user_id: userId,
                 amount: amount 
@@ -102,7 +105,7 @@ export const PointPage = () => {
             });
 
             if (response.status === 200) {
-              alert(`가상계좌: ${rsp.vbank_name} ${rsp.vbank_num}`);
+              alert(`가상계좌 발급 성공: ${rsp.vbank_name} ${rsp.vbank_num}`);
               fetchPoints(); 
             }
           } catch (serverError: any) {
@@ -113,7 +116,7 @@ export const PointPage = () => {
         }
       });
     },
-    [fetchPoints],
+    [fetchPoints, SERVER_URL],
   );
 
   if (loading) return <div className="flex items-center justify-center min-h-screen">로딩중...</div>;
@@ -121,22 +124,30 @@ export const PointPage = () => {
   return (
     <div className="p-6 bg-gray-50 min-h-screen flex flex-col items-center font-pretendard">
       <div className="w-full max-w-md bg-blue-600 rounded-[2.5rem] p-8 text-white shadow-xl mb-8">
-        <p className="text-xs opacity-70 mb-1">나의 잔여 포인트</p>
-        <h1 className="text-4xl font-bold">{points.toLocaleString()} P</h1>
+        <p className="text-xs opacity-70 mb-1 font-bold">나의 잔여 포인트</p>
+        <h1 className="text-4xl font-black">{points.toLocaleString()} P</h1>
       </div>
 
       <div className="w-full max-w-md space-y-3">
+        <h3 className="font-bold text-gray-700 px-2 mb-2">포인트 충전</h3>
         {[10000, 30000, 50000].map((amt) => (
           <button
             key={amt}
             onClick={() => handlePayment(amt)}
-            className="w-full py-5 bg-white rounded-2xl font-bold shadow-sm flex justify-between px-6 items-center"
+            className="w-full py-5 bg-white border border-gray-100 rounded-2xl font-bold shadow-sm flex justify-between px-6 items-center hover:bg-blue-50 active:scale-[0.98] transition-all"
           >
-            <span>{(amt + CHARGE_FEE).toLocaleString()}원</span>
-            <span className="text-blue-600">+{amt.toLocaleString()}P</span>
+            <div className="flex flex-col items-start">
+              <span className="text-gray-900">{(amt + CHARGE_FEE).toLocaleString()}원</span>
+              <span className="text-[10px] text-gray-400 font-medium tracking-tight">가상계좌 수수료 포함</span>
+            </div>
+            <span className="text-blue-600 font-bold">+{amt.toLocaleString()}P</span>
           </button>
         ))}
       </div>
+
+      <button onClick={() => navigate("/")} className="mt-10 text-gray-400 font-bold text-sm underline underline-offset-4">
+        홈으로 돌아가기
+      </button>
     </div>
   );
 };
