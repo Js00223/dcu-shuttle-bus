@@ -33,7 +33,7 @@ export const Home = () => {
 
         // ✅ fetch 대신 api.get을 사용합니다.
         // api.ts에 baseURL이 설정되어 있으므로 '/api/routes'만 적으면 됩니다.
-        const response = await api.get("/api/routes", {
+        const response = await api.get("/routes", {
           params: { t: Date.now() } // 캐시 방지용 파라미터
         });
 
