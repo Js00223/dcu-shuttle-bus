@@ -27,7 +27,7 @@ export const MyPage = () => {
 
       // 2. api 인스턴스 사용 (baseURL과 headers가 이미 설정되어 있음)
       // ✅ 422 에러 방지를 위해 params로 user_id를 명확히 전달
-      const response = await api.get("/api/user/status", {
+      const response = await api.get("/user/status", {
         params: { user_id: userId }
       });
 
