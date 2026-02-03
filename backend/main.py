@@ -24,10 +24,10 @@ app = FastAPI()
 
 # --- [설정: 실제 메일을 보내기 위한 정보] ---
 # 네이버 기준 예시입니다. 구글을 쓰시면 smtp.gmail.com / 587 포트를 사용하세요.
-SMTP_SERVER = "smtp.naver.com"
+SMTP_SERVER = "smtp.gmail.com"
 SMTP_PORT = 465
-SMTP_USER = "your_id@naver.com"  # 본인의 네이버 이메일
-SMTP_PASSWORD = "your_app_password"  # 네이버에서 발급받은 '앱 비밀번호'
+SMTP_USER = "j020218hh@gmail.com"  # 본인의 네이버 이메일
+SMTP_PASSWORD = "heyxdsgbbzjtmngc"  # 네이버에서 발급받은 '앱 비밀번호'
 
 # --- [데이터 모델 정의] ---
 class ChargeRequest(BaseModel):
