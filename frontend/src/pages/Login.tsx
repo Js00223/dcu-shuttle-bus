@@ -12,7 +12,7 @@ export const Login = () => {
     try {
       // [핵심 수정] 서버가 JSON Body가 아닌 쿼리 파라미터를 원하므로 
       // 데이터를 두 번째 인자(Body)가 아닌 세 번째 인자의 params에 담아 보냅니다.
-      const response = await api.post("/api/auth/login", null, {
+      const response = await api.post("/auth/login", null, {
         params: {
           email: email.trim(),
           password: password,
