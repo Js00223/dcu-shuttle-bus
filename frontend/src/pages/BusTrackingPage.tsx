@@ -32,7 +32,7 @@ declare global {
 }
 
 // [핵심] 백엔드 주소 설정 (끝에 슬래시 없이)
-const BACKEND_URL = "https://umbrellalike-multiseriate-cythia.ngrok-free.dev";
+const BACKEND_URL = "https://dcu-shuttle-bus.onrender.com";
 
 export const BusTrackingPage = ({ routeId }: { routeId: number }) => {
   const mapContainer = useRef<HTMLDivElement>(null);
