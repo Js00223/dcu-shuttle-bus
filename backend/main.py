@@ -1,11 +1,12 @@
 import random
 import datetime
 import logging
-from typing import List
-from fastapi import FastAPI, Depends, HTTPException, status
+from typing import List, Optional
+from fastapi import FastAPI, Depends, HTTPException, status, Body
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from sqlalchemy import text
+from pydantic import BaseModel
 
 # 내가 만든 파일들 임포트
 import models
@@ -16,6 +17,11 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 app = FastAPI()
+
+# --- [데이터 모델 정의] ---
+class ChargeRequest(BaseModel):
+    user_id: int
+    amount: int
 
 # --- [1. 서버 시작 시 실행 로직] ---
 @app.on_event("startup")
@@ -42,7 +48,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# --- [3. 임시 데이터 스토어] ---
 verification_codes = {}
 
 # --- [4. API 엔드포인트] ---
@@ -109,10 +114,9 @@ def reserve_bus(route_id: int, user_id: int, db: Session = Depends(get_db)):
     db.commit()
     return {"message": "예약 완료", "status": "success", "remaining_points": user.points}
 
-# (5) 버스 위치 추적 (지도가 안 뜨던 원인 해결!)
+# (5) 버스 위치 추적
 @app.get("/api/bus/track/{bus_id}")
 def get_bus_location(bus_id: int, user_lat: float, user_lng: float):
-    # 실제 버스 GPS 연동 전까지 대구가톨릭대 근처에서 움직이는 시뮬레이션 데이터 반환
     base_lat, base_lng = 35.9130, 128.8030 
     return {
         "bus_id": bus_id,
@@ -122,7 +126,7 @@ def get_bus_location(bus_id: int, user_lat: float, user_lng: float):
         "last_update": datetime.datetime.now().isoformat()
     }
 
-# (6) 내 정보 및 포인트 관리
+# (6) 내 정보 조회 (쿼리 파라미터 user_id 유지)
 @app.get("/api/auth/me")
 @app.get("/api/user/status")
 def get_user_status(user_id: int, db: Session = Depends(get_db)):
@@ -136,13 +140,14 @@ def get_user_status(user_id: int, db: Session = Depends(get_db)):
         "email": user.email
     }
 
+# (7) 포인트 충전 (JSON Body를 받도록 수정하여 프론트엔드 Axios 요청과 호환성 높임)
 @app.post("/api/points/charge")
 @app.post("/api/charge/request")
-def charge_points(user_id: int, amount: int, db: Session = Depends(get_db)):
-    user = db.query(models.User).filter(models.User.id == user_id).first()
+def charge_points(request: ChargeRequest, db: Session = Depends(get_db)):
+    user = db.query(models.User).filter(models.User.id == request.user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="사용자를 찾을 수 없습니다.")
     
-    user.points += amount
+    user.points += request.amount
     db.commit()
-    return {"message": f"{amount}포인트가 충전되었습니다.", "points": user.points, "status": "success"}
+    return {"message": f"{request.amount}포인트가 충전되었습니다.", "points": user.points, "status": "success"}
