@@ -1,11 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
-import axios from "axios";
 import { logout } from "../utils/auth";
-import api from "../utils/api";
-
-// [추가] 백엔드 주소 정의 (PointAndPass.tsx와 동일해야 함)
-const BACKEND_URL =
-  "https://dcu-shuttle-bus.onrender.com";
+import api from "../utils/api"; // ✅ api 인스턴스 사용 (axios는 제거)
 
 export const MyPage = () => {
   const [studentId, setStudentId] = useState<string>("");
@@ -20,32 +15,44 @@ export const MyPage = () => {
   const fetchUserData = useCallback(async () => {
     try {
       setLoading(true);
-      const response = await axios.get(`${BACKEND_URL}/api/user/status`, {
-        // [수정] 전체 URL 사용
-        headers: {
-          Authorization: `Bearer ${localStorage.getItem("token")}`,
-          "ngrok-skip-browser-warning": "69420", // [추가] ngrok 우회 헤더
-        },
+
+      // 1. 로컬스토리지에서 로그인된 유저 ID 가져오기
+      const user = JSON.parse(localStorage.getItem("user") || "{}");
+      const userId = user.user_id || user.id;
+
+      if (!userId) {
+        console.error("유저 ID가 없습니다. 로그인이 필요합니다.");
+        return;
+      }
+
+      // 2. api 인스턴스 사용 (baseURL과 headers가 이미 설정되어 있음)
+      // ✅ 422 에러 방지를 위해 params로 user_id를 명확히 전달
+      const response = await api.get("/api/user/status", {
+        params: { user_id: userId }
       });
 
       if (response.data) {
-        setStudentId(response.data.studentId || "20231234");
+        // 이메일 앞부분을 학번 대용으로 사용하거나 서버 데이터를 직접 사용
+        setStudentId(response.data.studentId || response.data.email?.split("@")[0] || "20231234");
         setPoints(response.data.points ?? 0);
         setPhone(response.data.phone || "010-0000-0000");
         setTempPhone(response.data.phone || "010-0000-0000");
+
+        // 로컬 스토리지 데이터 최신화
+        localStorage.setItem("user", JSON.stringify(response.data));
       }
     } catch (error) {
       console.error("마이페이지 데이터 동기화 실패:", error);
       // 실패 시 로컬 백업 유지
+      const user = JSON.parse(localStorage.getItem("user") || "{}");
+      setPoints(user.points || 0);
       setStudentId(localStorage.getItem("studentId") || "20231234");
-      setPoints(Number(localStorage.getItem("points")) || 0);
       setPhone(localStorage.getItem("phone") || "010-1234-5678");
     } finally {
       setLoading(false);
     }
   }, []);
 
-  // 마이페이지가 열릴 때마다 최신 데이터를 가져옵니다.
   useEffect(() => {
     fetchUserData();
   }, [fetchUserData]);
@@ -53,16 +60,14 @@ export const MyPage = () => {
   // [기능 2] 연락처 수정
   const handleSavePhone = async () => {
     try {
-      await axios.post(
-        `${BACKEND_URL}/user/update-phone`, // [수정] 전체 URL 사용
-        { phone: tempPhone },
-        {
-          headers: {
-            Authorization: `Bearer ${localStorage.getItem("token")}`,
-            "ngrok-skip-browser-warning": "69420", // [추가] ngrok 우회 헤더
-          },
-        },
-      );
+      const user = JSON.parse(localStorage.getItem("user") || "{}");
+      const userId = user.user_id || user.id;
+
+      // ✅ api 인스턴스 사용 및 경로 수정
+      await api.post("/api/user/update-phone", { 
+        user_id: userId,
+        phone: tempPhone 
+      });
 
       setPhone(tempPhone);
       localStorage.setItem("phone", tempPhone);
@@ -85,7 +90,7 @@ export const MyPage = () => {
   }
 
   return (
-    <div className="min-h-screen bg-[#F2F2F7] flex flex-col p-6">
+    <div className="min-h-screen bg-[#F2F2F7] flex flex-col p-6 font-pretendard">
       <div className="pt-12 mb-8 text-center">
         <h1 className="text-3xl font-black text-gray-900">마이페이지</h1>
       </div>
