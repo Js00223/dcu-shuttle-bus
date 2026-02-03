@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import axios, { AxiosError } from "axios";
 
 const BACKEND_URL =
-  "https://umbrellalike-multiseriate-cythia.ngrok-free.dev/api";
+  "https://dcu-shuttle-bus.onrender.com";
 const CHARGE_FEE = 330;
 
 interface UserStatus {
