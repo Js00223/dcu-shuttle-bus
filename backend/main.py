@@ -76,14 +76,13 @@ def send_real_email(receiver_email: str, code: str):
 def startup_event():
     logger.info("🚀 서버 기동 중...")
     try:
-        # 이 코드가 models.py에 정의된 Message 테이블 등을 실제 DB에 생성합니다.
+        # models.py의 설정을 바탕으로 DB 테이블을 생성하거나 업데이트합니다.
         models.Base.metadata.create_all(bind=engine)
         logger.info("✅ 데이터베이스 및 모델 생성 완료")
     except Exception as e:
         logger.error(f"❌ DB 초기화 실패: {e}")
 
 # --- [2. CORS 설정 수정] ---
-# Vercel 주소와 로컬 주소를 모두 명확히 허용합니다.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
@@ -200,17 +199,19 @@ def update_user_phone(request: PhoneUpdateRequest, db: Session = Depends(get_db)
 
 # --- [신규 기능: 쪽지 시스템] ---
 
-# (9) 쪽지 목록 조회
+# (9) 쪽지 목록 조회 (로그 에러 해결: receiver_id 참조 보장)
 @app.get("/api/messages")
 def get_messages(user_id: int, db: Session = Depends(get_db)):
     try:
+        # models.py에 receiver_id가 정의되어 있어야 에러가 나지 않습니다.
         messages = db.query(models.Message).filter(
             models.Message.receiver_id == user_id
         ).order_by(models.Message.created_at.desc()).all()
         return messages
     except Exception as e:
         logger.error(f"쪽지 목록 조회 에러: {e}")
-        raise HTTPException(status_code=500, detail="쪽지함을 불러오는 중 서버 에러 발생")
+        # 이 에러가 계속된다면 models.py 파일에 Message 클래스 내 receiver_id가 정의되었는지 꼭 확인하세요.
+        raise HTTPException(status_code=500, detail=f"서버 내부 에러: {str(e)}")
 
 # (10) 쪽지 상세 조회
 @app.get("/api/messages/{message_id}")
