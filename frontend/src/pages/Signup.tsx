@@ -39,7 +39,7 @@ export const Signup = () => {
     try {
       // 서버가 (email: str, code: str, password: str, name: str) 처럼 인자를 받을 경우,
       // 아래와 같이 params에 담아서 보내야 422 에러가 나지 않습니다.
-      const response = await api.post("/api/auth/signup", null, {
+      const response = await api.post("/auth/signup", null, {
         params: {
           email: email.trim(),
           code: code.trim(),
