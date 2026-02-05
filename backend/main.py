@@ -25,7 +25,7 @@ app = FastAPI()
 
 # --- [설정: 구글 SMTP IP 주소 직접 지정 및 환경변수] ---
 SMTP_SERVER = "smtp.gmail.com"
-SMTP_PORT = 587
+SMTP_PORT = 465
 SMTP_USER = os.getenv("SMTP_USER", "j020218hh@gmail.com")
 SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", "heyxdsgbbzjtmngc")
 
