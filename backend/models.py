@@ -48,11 +48,14 @@ class SemesterPass(Base):
     status = Column(String, default="pending") # pending, approved, rejected
     applied_at = Column(DateTime, default=datetime.now)
 
+# models.py
 class Message(Base):
     __tablename__ = "messages"
+
     id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer)
-    title = Column(String)       # 예: "포인트 충전 완료"
-    content = Column(String)     # 예: "10,000P가 정상적으로 충전되었습니다."
-    is_read = Column(Boolean, default=False)
-    created_at = Column(DateTime, default=datetime.now)
+    sender_id = Column(Integer, ForeignKey("users.id"))
+    receiver_id = Column(Integer, ForeignKey("users.id")) # 👈 이 철자가 정확해야 합니다!
+    title = Column(String)
+    content = Column(Text)
+    is_read = Column(Integer, default=0)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
