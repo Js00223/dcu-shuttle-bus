@@ -68,7 +68,7 @@ export const MyPage = () => {
       const user = JSON.parse(localStorage.getItem("user") || "{}");
       const userId = user.user_id || user.id;
 
-      await api.post("/api/user/update-phone", { 
+      await api.post("/user/update-phone", { 
         user_id: userId,
         phone: tempPhone 
       });
