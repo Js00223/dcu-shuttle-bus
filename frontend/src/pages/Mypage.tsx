@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { logout } from "../utils/auth";
-import api from "../utils/api"; // ✅ api 인스턴스 사용 (axios는 제거)
+import api from "../utils/api"; 
 
 export const MyPage = () => {
   const [studentId, setStudentId] = useState<string>("");
@@ -25,29 +25,34 @@ export const MyPage = () => {
         return;
       }
 
-      // 2. api 인스턴스 사용 (baseURL과 headers가 이미 설정되어 있음)
-      // ✅ 422 에러 방지를 위해 params로 user_id를 명확히 전달
+      // 2. api 인스턴스 사용
       const response = await api.get("/user/status", {
         params: { user_id: userId }
       });
 
       if (response.data) {
-        // 이메일 앞부분을 학번 대용으로 사용하거나 서버 데이터를 직접 사용
-        setStudentId(response.data.studentId || response.data.email?.split("@")[0] || "20231234");
+        // ✅ [수정 파트] 학번 동적 결정 로직
+        // 서버의 studentId -> 이메일 앞자리 -> 기존 로컬 스토리지 데이터 순으로 확인
+        const dynamicStudentId = 
+          response.data.studentId || 
+          response.data.email?.split("@")[0] || 
+          user.studentId || 
+          "학번 정보 없음";
+
+        setStudentId(dynamicStudentId);
         setPoints(response.data.points ?? 0);
         setPhone(response.data.phone || "010-0000-0000");
         setTempPhone(response.data.phone || "010-0000-0000");
 
-        // 로컬 스토리지 데이터 최신화
-        localStorage.setItem("user", JSON.stringify(response.data));
+        // 로컬 스토리지 데이터 최신화 (학번 정보 포함하여 저장)
+        localStorage.setItem("user", JSON.stringify({ ...response.data, studentId: dynamicStudentId }));
       }
     } catch (error) {
       console.error("마이페이지 데이터 동기화 실패:", error);
-      // 실패 시 로컬 백업 유지
       const user = JSON.parse(localStorage.getItem("user") || "{}");
       setPoints(user.points || 0);
-      setStudentId(localStorage.getItem("studentId") || "20231234");
-      setPhone(localStorage.getItem("phone") || "010-1234-5678");
+      setStudentId(user.studentId || user.email?.split("@")[0] || "20231234");
+      setPhone(user.phone || "010-1234-5678");
     } finally {
       setLoading(false);
     }
@@ -63,14 +68,16 @@ export const MyPage = () => {
       const user = JSON.parse(localStorage.getItem("user") || "{}");
       const userId = user.user_id || user.id;
 
-      // ✅ api 인스턴스 사용 및 경로 수정
       await api.post("/api/user/update-phone", { 
         user_id: userId,
         phone: tempPhone 
       });
 
       setPhone(tempPhone);
-      localStorage.setItem("phone", tempPhone);
+      // 로컬 스토리지 내 휴대폰 번호도 동기화
+      const updatedUser = { ...user, phone: tempPhone };
+      localStorage.setItem("user", JSON.stringify(updatedUser));
+      
       setIsEditing(false);
       alert("연락처가 서버에 저장되었습니다.");
     } catch (error) {
@@ -105,6 +112,7 @@ export const MyPage = () => {
             <p className="text-[#8E8E93] text-[10px] font-bold uppercase tracking-widest mb-1">
               Student ID
             </p>
+            {/* ✅ 동적으로 업데이트된 학번 표시 */}
             <h2 className="text-xl font-black text-gray-900">{studentId}</h2>
           </div>
 
