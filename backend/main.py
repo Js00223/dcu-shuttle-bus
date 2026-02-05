@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 app = FastAPI()
 
 # --- [설정: 구글 SMTP IP 주소 직접 지정 및 환경변수] ---
-SMTP_SERVER = "74.125.204.108"
+SMTP_SERVER = "smtp.gmail.com"
 SMTP_PORT = 587
 SMTP_USER = os.getenv("SMTP_USER", "j020218hh@gmail.com")
 SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", "heyxdsgbbzjtmngc")
