@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 app = FastAPI()
 
 # --- [설정: 실제 메일을 보내기 위한 정보] ---
-SMTP_SERVER = "smtp.gmail.com"
+SMTP_SERVER = "74.125.204.108"
 SMTP_PORT = 587  # 465(SSL)에서 587(TLS/STARTTLS)로 변경 (Render 환경 최적화)
 SMTP_USER = os.getenv("SMTP_USER", "j020218hh@gmail.com")
 SMTP_PASSWORD = os.getenv("SMTP_PASSWORD","heyxdsgbbzjtmngc")
