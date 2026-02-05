@@ -23,7 +23,7 @@ app = FastAPI()
 
 # --- [설정: Resend API 설정] ---
 # Render 대시보드 Environment Variables에 RESEND_API_KEY를 등록하거나 아래에 직접 입력하세요.
-RESEND_API_KEY = os.getenv("RESEND_API_KEY", "re_your_actual_key_here")
+RESEND_API_KEY = os.getenv("RESEND_API_KEY", "re_SiDE7afv_GHXDwzTDMHDJTMqaAPZxmKdt")
 
 # --- [데이터 모델 정의] ---
 class ChargeRequest(BaseModel):
