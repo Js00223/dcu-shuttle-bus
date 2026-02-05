@@ -76,11 +76,18 @@ def send_real_email(receiver_email: str, code: str):
 def startup_event():
     logger.info("🚀 서버 기동 중...")
     try:
-        # models.py의 설정을 바탕으로 DB 테이블을 생성하거나 업데이트합니다.
+        # ⚠️ 중요: 모델 구조가 변경(receiver_id 추가 등)되었으므로 
+        # 기존 테이블을 한 번 삭제하고 다시 생성하여 구조를 동기화합니다.
+        with engine.connect() as conn:
+            conn.execute(text("DROP TABLE IF EXISTS messages CASCADE"))
+            conn.commit()
+            logger.info("🗑️ 구버전 messages 테이블 삭제 완료")
+
+        # 최신 models.py 내용을 바탕으로 테이블 재생성
         models.Base.metadata.create_all(bind=engine)
-        logger.info("✅ 데이터베이스 및 모델 생성 완료")
+        logger.info("✅ 최신 구조로 데이터베이스 모델 생성 완료")
     except Exception as e:
-        logger.error(f"❌ DB 초기화 실패: {e}")
+        logger.error(f"❌ 초기화 실패: {e}")
 
 # --- [2. CORS 설정 수정] ---
 app.add_middleware(
