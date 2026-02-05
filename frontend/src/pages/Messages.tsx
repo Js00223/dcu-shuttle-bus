@@ -1,37 +1,67 @@
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { ChevronRight, MailOpen, Mail } from "lucide-react";
+import { useNavigate } from "react-router-dom";
+import axios from "axios";
 
 // 타입 정의
 interface Message {
   id: number;
   title: string;
   content: string;
-  is_read: boolean;
+  is_read: number; // 백엔드에서 0 또는 1로 관리하므로 number로 변경
   created_at: string;
 }
 
-// 초기 더미 데이터: useEffect를 사용하지 않고 초기 State로 할당하기 위해 컴포넌트 외부로 분리
-const INITIAL_MESSAGES: Message[] = [
-  {
-    id: 1,
-    title: "포인트 충전 완료",
-    content: "요청하신 10,000P 충전이 완료되었습니다. 이용해주셔서 감사합니다.",
-    is_read: false,
-    created_at: "방금 전",
-  },
-  {
-    id: 2,
-    title: "학기권 승인 안내",
-    content:
-      "구미 노선 시외 학기권 신청이 승인되었습니다. 오늘부터 사용 가능합니다.",
-    is_read: true,
-    created_at: "2시간 전",
-  },
-];
+const BACKEND_URL = "https://dcu-shuttle-bus.onrender.com";
 
 export const Messages = () => {
-  // useEffect 없이 직접 초기값을 전달하여 Cascading Render 에러 해결
-  const [messages] = useState<Message[]>(INITIAL_MESSAGES);
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [loading, setLoading] = useState<boolean>(true);
+  const navigate = useNavigate();
+
+  // ✅ 쪽지 목록 가져오기 함수
+  const fetchMessages = useCallback(async () => {
+    try {
+      setLoading(true);
+      const user = JSON.parse(localStorage.getItem("user") || "{}");
+      const userId = user.user_id || user.id;
+
+      if (!userId) {
+        console.error("로그인이 필요합니다.");
+        return;
+      }
+
+      const response = await axios.get<Message[]>(`${BACKEND_URL}/api/messages`, {
+        params: { user_id: userId }
+      });
+
+      if (response.data) {
+        setMessages(response.data);
+      }
+    } catch (err) {
+      console.error("쪽지 목록 로드 실패:", err);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchMessages();
+  }, [fetchMessages]);
+
+  // ✅ 시간 포맷팅 함수 (ISO 형식을 읽기 좋게)
+  const formatTime = (dateString: string) => {
+    const date = new Date(dateString);
+    return date.toLocaleDateString() + " " + date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-[#F2F2F7] flex items-center justify-center">
+        <p className="text-gray-400 animate-pulse">쪽지함을 확인하고 있습니다...</p>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-[#F2F2F7] pt-12 pb-20">
@@ -48,6 +78,7 @@ export const Messages = () => {
           messages.map((msg) => (
             <div
               key={msg.id}
+              onClick={() => navigate(`/messages/${msg.id}`)} // ✅ 상세 페이지 이동 추가
               className="flex items-center p-5 border-b border-gray-50 last:border-0 active:bg-gray-50 transition-colors cursor-pointer"
             >
               {/* 읽음 여부에 따른 아이콘 표시 */}
@@ -66,7 +97,7 @@ export const Messages = () => {
                     {msg.title}
                   </h3>
                   <span className="text-[11px] text-gray-400">
-                    {msg.created_at}
+                    {formatTime(msg.created_at)}
                   </span>
                 </div>
                 {/* 긴 내용은 한 줄로 줄임표 처리 */}
