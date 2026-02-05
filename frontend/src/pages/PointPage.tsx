@@ -2,6 +2,8 @@ import { useState, useCallback, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import api from "../utils/api"; 
 
+// ✅ 사용하지 않는 interface IMP 삭제 (에러 TS6196 해결)
+
 interface PaymentData {
   pg: string;
   pay_method: string;
@@ -19,12 +21,12 @@ interface IMPResponse {
   error_msg?: string;
 }
 
-interface IMP {
-  init: (accountCode: string) => void;
-  request_pay: (data: PaymentData, callback: (rsp: IMPResponse) => void) => void;
+// ✅ 타입 충돌 방지를 위해 window.IMP를 any로 인식하도록 처리
+declare global {
+  interface Window {
+    IMP: any;
+  }
 }
-
-
 
 const CHARGE_FEE = 330;
 
@@ -33,7 +35,6 @@ export const PointPage = () => {
   const [points, setPoints] = useState<number>(0);
   const [loading, setLoading] = useState<boolean>(true);
 
-  // 서버의 실제 도메인 주소 (이걸 직접 사용합니다)
   const SERVER_URL = "https://dcu-shuttle-bus.onrender.com/api";
 
   const fetchPoints = useCallback(async () => {
@@ -47,7 +48,6 @@ export const PointPage = () => {
         return;
       }
 
-      // ✅ baseURL 설정을 무시하고 전체 주소를 직접 때려 넣습니다.
       const response = await api.get(`${SERVER_URL}/user/status`, {
         params: { user_id: userId }
       }); 
@@ -63,7 +63,7 @@ export const PointPage = () => {
     } finally {
       setLoading(false);
     }
-  }, [navigate]);
+  }, [navigate, SERVER_URL]);
 
   useEffect(() => {
     fetchPoints();
@@ -71,6 +71,7 @@ export const PointPage = () => {
 
   const handlePayment = useCallback(
     (amount: number) => {
+      // ✅ window에서 IMP를 가져올 때 any 타입으로 처리되어 충돌이 없습니다.
       const { IMP } = window;
       if (!IMP) {
         alert("결제 모듈 로드 실패");
@@ -94,7 +95,6 @@ export const PointPage = () => {
       IMP.request_pay(paymentData, async (rsp: IMPResponse) => {
         if (rsp.success) {
           try {
-            // ✅ 여기도 전체 주소를 직접 사용합니다.
             const response = await api.post(`${SERVER_URL}/charge/request`, null, {
               params: { 
                 user_id: userId,
