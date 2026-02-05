@@ -179,7 +179,7 @@ export const PointAndPass = () => {
         <div className="mb-8">
           <h3 className="font-black text-gray-800 mb-4 px-2">포인트 충전</h3>
           <div className="grid grid-cols-2 gap-3">
-            {[10000, 30000, 50000, 100000].map((amount) => (
+            {[10000, 30000, 50000, 100000, 200000, 300000].map((amount) => (
               <button
                 key={amount}
                 onClick={() => handleRequestCharge(amount)}
