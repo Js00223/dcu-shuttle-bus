@@ -24,9 +24,7 @@ interface IMP {
   request_pay: (data: PaymentData, callback: (rsp: IMPResponse) => void) => void;
 }
 
-declare global {
-  interface Window { IMP?: IMP; }
-}
+
 
 const CHARGE_FEE = 330;
 
