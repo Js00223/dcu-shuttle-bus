@@ -2,10 +2,8 @@ import os
 import random
 import datetime
 import logging
-import smtplib
+import requests  # smtplib 대신 사용
 from typing import List, Optional
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
 
 from fastapi import FastAPI, Depends, HTTPException, status, Body
 from fastapi.middleware.cors import CORSMiddleware
@@ -23,11 +21,9 @@ logger = logging.getLogger(__name__)
 
 app = FastAPI()
 
-# --- [설정: 구글 SMTP 설정 변경] ---
-SMTP_SERVER = "smtp.gmail.com"
-SMTP_PORT = 465 # SSL 전용 포트로 변경
-SMTP_USER = os.getenv("SMTP_USER", "j020218hh@gmail.com")
-SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", "heyxdsgbbzjtmngc")
+# --- [설정: Resend API 설정] ---
+# Render 대시보드 Environment Variables에 RESEND_API_KEY를 등록하거나 아래에 직접 입력하세요.
+RESEND_API_KEY = os.getenv("RESEND_API_KEY", "re_your_actual_key_here")
 
 # --- [데이터 모델 정의] ---
 class ChargeRequest(BaseModel):
@@ -60,24 +56,37 @@ bus_realtime_locations = {
     2: {"lat": 35.8530, "lng": 128.7330, "status": "running", "bus_name": "반월당 방면"}
 }
 
-# --- [메일 발송 함수: SMTP_SSL 및 465 포트 적용] ---
+# --- [메일 발송 함수: Resend API 적용] ---
 def send_real_email(receiver_email: str, code: str):
     try:
-        msg = MIMEMultipart()
-        msg['From'] = SMTP_USER
-        msg['To'] = receiver_email
-        msg['Subject'] = "[대구가톨릭대 셔틀] 본인확인 인증번호입니다."
-        content = f"안녕하세요. 인증번호는 [{code}] 입니다."
-        msg.attach(MIMEText(content, 'plain'))
+        # 💡 API 방식은 포트 차단 영향을 받지 않습니다.
+        response = requests.post(
+            "https://api.resend.com/emails",
+            headers={"Authorization": f"Bearer {RESEND_API_KEY}"},
+            json={
+                "from": "onboarding@resend.dev", # Resend 무료 플랜 기본 발신자
+                "to": receiver_email,
+                "subject": "[대구가톨릭대 셔틀] 본인확인 인증번호입니다.",
+                "html": f"""
+                <div style="font-family: sans-serif; padding: 20px;">
+                    <h2>인증번호 안내</h2>
+                    <p>안녕하세요. 본인확인을 위한 인증번호는 아래와 같습니다.</p>
+                    <p style="font-size: 24px; font-weight: bold; color: #007bff;">{code}</p>
+                    <p>앱으로 돌아가 인증을 완료해 주세요.</p>
+                </div>
+                """
+            }
+        )
         
-        # 💡 [Errno 101] 해결을 위해 SMTP_SSL을 사용하여 465 포트로 보안 연결 시도
-        server = smtplib.SMTP_SSL(SMTP_SERVER, SMTP_PORT, timeout=15)
-        server.login(SMTP_USER, SMTP_PASSWORD)
-        server.sendmail(SMTP_USER, receiver_email, msg.as_string())
-        server.quit()
-        return True
+        if response.status_code == 200:
+            logger.info(f"✅ 메일 발송 성공: {receiver_email}")
+            return True
+        else:
+            logger.error(f"❌ Resend API 에러: {response.text}")
+            return False
+            
     except Exception as e:
-        logger.error(f"❌ 메일 발송 네트워크 에러: {e}")
+        logger.error(f"❌ 메일 발송 중 예외 발생: {e}")
         return False
 
 # --- [1. 서버 시작 시 실행 로직] ---
@@ -124,7 +133,7 @@ def send_verification_code(email: str):
     if email_sent:
         return {"message": "인증번호가 발송되었습니다.", "status": "success"}
     else:
-        # 네트워크 차단 시 프론트엔드에서 인증번호를 즉시 확인할 수 있도록 응답에 포함
+        # API 발송 실패 시에도 가입 테스트가 가능하도록 인증번호를 직접 반환
         logger.warning(f"⚠️ [비상모드] 메일 발송 실패. 대신 인증번호를 반환함: {code}")
         return {
             "message": "메일 서버 연결 불안정으로 인해 테스트 코드가 발송되었습니다.",
