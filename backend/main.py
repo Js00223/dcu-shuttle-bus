@@ -42,8 +42,14 @@ class PhoneUpdateRequest(BaseModel):
     user_id: int
     phone: str
 
+# 쪽지 생성을 위한 모델 추가
+class MessageCreate(BaseModel):
+    sender_id: int
+    receiver_id: int
+    title: str
+    content: str
+
 # --- [실시간 데이터 관리 (테스트용 랜덤 제거)] ---
-# 실제 서비스에서는 이 데이터를 버스 기사용 앱이 업데이트하거나 DB에서 관리합니다.
 bus_realtime_locations = {
     1: {"lat": 35.9130, "lng": 128.8030, "status": "running", "bus_name": "하양역 방면"},
     2: {"lat": 35.8530, "lng": 128.7330, "status": "running", "bus_name": "반월당 방면"}
@@ -141,17 +147,13 @@ def login(email: str, password: str, db: Session = Depends(get_db)):
     return {"user_id": user.id, "name": user.name, "points": user.points, "status": "success"}
 
 #노선조회
-@app.get("/api/routes") # 👈 반드시 /api/가 포함되어야 함
+@app.get("/api/routes")
 def get_all_routes(db: Session = Depends(get_db)):
     return db.query(models.BusRoute).all()
 
-# (5) 버스 위치 추적 (main.py 내 위치 확인)
+# (5) 버스 위치 추적
 @app.get("/api/bus/track/{bus_id}")
-def get_bus_location(
-    bus_id: int, 
-    user_lat: float,  # ✅ 이 부분이 없으면 404 발생
-    user_lng: float   # ✅ 이 부분이 없으면 404 발생
-):
+def get_bus_location(bus_id: int, user_lat: float, user_lng: float):
     bus_info = bus_realtime_locations.get(bus_id)
     if not bus_info:
         raise HTTPException(status_code=404, detail="Bus not found")
@@ -186,13 +188,9 @@ def charge_points(request: ChargeRequest, db: Session = Depends(get_db)):
 # (8) 마이페이지>전화번호 변경
 @app.post("/api/user/update-phone")
 def update_user_phone(request: PhoneUpdateRequest, db: Session = Depends(get_db)):
-    # 1. 유저 찾기
     user = db.query(models.User).filter(models.User.id == request.user_id).first()
-    
     if not user:
         raise HTTPException(status_code=404, detail="유저를 찾을 수 없습니다.")
-    
-    # 2. 연락처 업데이트 (models.User에 phone 컬럼이 있어야 함)
     try:
         user.phone = request.phone
         db.commit()
@@ -201,3 +199,47 @@ def update_user_phone(request: PhoneUpdateRequest, db: Session = Depends(get_db)
         db.rollback()
         logger.error(f"연락처 수정 에러: {e}")
         raise HTTPException(status_code=500, detail="데이터베이스 업데이트 실패")
+
+# --- [신규 기능: 쪽지 시스템] ---
+
+# (9) 쪽지 목록 조회 (내가 받은 쪽지)
+@app.get("/api/messages")
+def get_messages(user_id: int, db: Session = Depends(get_db)):
+    messages = db.query(models.Message).filter(
+        models.Message.receiver_id == user_id
+    ).order_by(models.Message.created_at.desc()).all()
+    return messages
+
+# (10) 쪽지 상세 조회 (상세 내용을 클릭했을 때 호출 및 읽음 처리)
+@app.get("/api/messages/{message_id}")
+def get_message_detail(message_id: int, db: Session = Depends(get_db)):
+    msg = db.query(models.Message).filter(models.Message.id == message_id).first()
+    if not msg:
+        raise HTTPException(status_code=404, detail="쪽지를 찾을 수 없습니다.")
+    
+    # 읽음 처리 (is_read 컬럼이 있다고 가정)
+    try:
+        msg.is_read = 1
+        db.commit()
+    except Exception:
+        db.rollback()
+        
+    return msg
+
+# (11) 쪽지 보내기
+@app.post("/api/messages/send")
+def send_message(request: MessageCreate, db: Session = Depends(get_db)):
+    try:
+        new_msg = models.Message(
+            sender_id=request.sender_id,
+            receiver_id=request.receiver_id,
+            title=request.title,
+            content=request.content
+        )
+        db.add(new_msg)
+        db.commit()
+        return {"message": "쪽지가 성공적으로 발송되었습니다.", "status": "success"}
+    except Exception as e:
+        db.rollback()
+        logger.error(f"쪽지 발송 에러: {e}")
+        raise HTTPException(status_code=500, detail="쪽지 발송 실패")
