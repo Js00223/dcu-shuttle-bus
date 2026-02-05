@@ -18,7 +18,7 @@ export const Signup = () => {
     }
     
     try {
-      const response = await api.post("/api/auth/send-code", null, {
+      const response = await api.post("/auth/send-code", null, {
         params: { email: email.trim() }
       });
 
