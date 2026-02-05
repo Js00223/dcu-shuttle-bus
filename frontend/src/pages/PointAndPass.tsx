@@ -93,7 +93,7 @@ export const PointAndPass = () => {
     }
 
     // ✅ 아임포트 초기화
-    IMP.init("imp77764653"); 
+    IMP.init("imp75854740"); 
 
     const user = JSON.parse(localStorage.getItem("user") || "{}");
     const userId = user.user_id || user.id;
