@@ -1,8 +1,8 @@
 import { useState, useEffect, useCallback } from "react";
 import axios, { AxiosError } from "axios";
 
-const BACKEND_URL =
-  "https://dcu-shuttle-bus.onrender.com";
+// ✅ 백엔드 주소 확인
+const BACKEND_URL = "https://dcu-shuttle-bus.onrender.com";
 const CHARGE_FEE = 330;
 
 interface UserStatus {
@@ -27,23 +27,29 @@ export const PointAndPass = () => {
   const [hasPass, setHasPass] = useState<boolean>(false);
   const [expiryDate, setExpiryDate] = useState<string | undefined>("");
   const [loading, setLoading] = useState<boolean>(true);
-  const [pendingPayment, setPendingPayment] = useState<PendingPayment | null>(
-    null,
-  );
+  const [pendingPayment, setPendingPayment] = useState<PendingPayment | null>(null);
   const [timeLeft, setTimeLeft] = useState<number>(0);
 
-  // 1. 사용자 상태 불러오기 (포인트 등 최신화)
+  // 1. 사용자 상태 불러오기
   const fetchUserStatus = useCallback(async () => {
     try {
-      // 로딩 중임을 표시 (중복 호출 방지)
+      setLoading(true);
+      
+      // ✅ 로컬스토리지에서 실제 로그인된 유저 ID 가져오기
+      const user = JSON.parse(localStorage.getItem("user") || "{}");
+      const userId = user.user_id || user.id;
+
+      if (!userId) {
+        console.error("유저 정보를 찾을 수 없습니다.");
+        return;
+      }
+
+      // ✅ 경로에 /api 추가 및 params 수정
       const response = await axios.get<UserStatus>(
-        `${BACKEND_URL}/user/status`,
+        `${BACKEND_URL}/api/user/status`, 
         {
-          params: { user_id: 1 }, // [추가] 유저 ID 명시 (필요시)
-          headers: {
-            "ngrok-skip-browser-warning": "69420",
-          },
-        },
+          params: { user_id: userId },
+        }
       );
 
       if (response.data) {
@@ -62,7 +68,7 @@ export const PointAndPass = () => {
     fetchUserStatus();
   }, [fetchUserStatus]);
 
-  // 2. 가상계좌 입금 타이머 로직
+  // 2. 가상계좌 입금 타이머
   useEffect(() => {
     if (!pendingPayment) return;
 
@@ -85,38 +91,34 @@ export const PointAndPass = () => {
   // 3. 충전 요청
   const handleRequestCharge = async (amount: number) => {
     try {
+      const user = JSON.parse(localStorage.getItem("user") || "{}");
+      const userId = user.user_id || user.id;
+
+      // ✅ 경로에 /api 추가
       const response = await axios.post<PendingPayment>(
-        `${BACKEND_URL}/charge/request`,
-        { amount: amount },
-        {
-          headers: {
-            "ngrok-skip-browser-warning": "69420",
-          },
-        },
+        `${BACKEND_URL}/api/charge/request`,
+        { 
+          user_id: userId, // 백엔드에서 누구의 충전인지 알아야 함
+          amount: amount 
+        }
       );
       setPendingPayment(response.data);
     } catch (err) {
-      console.error("충전 요청 에러 상세:", err); // 'err'를 여기서 사용함으로 해결!
+      console.error("충전 요청 에러:", err);
       alert("충전 요청에 실패했습니다.");
     }
   };
 
-  // 4. 입금 확인(충전 완료)
+  // 4. 입금 확인
   const handleConfirmCharge = async () => {
     if (!pendingPayment) return;
     try {
+      // ✅ 경로에 /api 추가
       await axios.post(
-        `${BACKEND_URL}/charge/confirm/${pendingPayment.payment_id}`,
-        {},
-        {
-          headers: { "ngrok-skip-browser-warning": "69420" },
-        },
+        `${BACKEND_URL}/api/charge/confirm/${pendingPayment.payment_id}`
       );
 
       alert(`${pendingPayment.amount}P 충전이 완료되었습니다!`);
-
-      // [수정 핵심] 단순히 포인트를 더하는게 아니라, 서버의 최신 데이터를 다시 긁어옵니다.
-      // 이렇게 하면 다른 페이지로 이동해도 서버에서 받은 동일한 값을 유지합니다.
       await fetchUserStatus();
       setPendingPayment(null);
     } catch (err) {
@@ -127,33 +129,26 @@ export const PointAndPass = () => {
 
   if (loading)
     return (
-      <div className="p-10 text-center animate-pulse">데이터 로드 중...</div>
+      <div className="p-10 text-center animate-pulse text-gray-400 font-bold">
+        데이터 로드 중...
+      </div>
     );
 
   return (
-    <div className="min-h-screen bg-[#F2F2F7] p-4 pb-24">
-      {/* 포인트 카드 */}
+    <div className="min-h-screen bg-[#F2F2F7] p-4 pb-24 font-pretendard">
       <div className="bg-white rounded-3xl p-8 shadow-sm mb-6 border border-gray-100">
-        <p className="text-gray-400 text-sm mb-2 font-medium">
-          나의 잔여 포인트
-        </p>
+        <p className="text-gray-400 text-sm mb-2 font-medium">나의 잔여 포인트</p>
         <h1 className="text-4xl font-black text-gray-900">
           {(points ?? 0).toLocaleString()} <span className="text-2xl">P</span>
         </h1>
       </div>
 
-      {/* 가상계좌 입금 안내 카드 */}
       {pendingPayment && (
         <div className="bg-blue-600 rounded-3xl p-6 mb-6 text-white shadow-xl animate-in fade-in zoom-in duration-300">
           <div className="flex justify-between items-start mb-4">
             <h3 className="font-bold text-lg">가상계좌 입금 대기 중</h3>
             <span className="bg-red-500 text-[10px] px-2 py-1 rounded-full font-bold">
-              {Math.floor(
-                (new Date(pendingPayment.expire_at).getTime() -
-                  new Date().getTime()) /
-                  60000,
-              )}
-              분 {timeLeft}초 남음
+              {timeLeft}초 남음
             </span>
           </div>
           <div className="bg-blue-700/50 rounded-2xl p-4 mb-4 text-sm space-y-2">
@@ -180,7 +175,6 @@ export const PointAndPass = () => {
         </div>
       )}
 
-      {/* 충전 버튼 그리드 */}
       {!pendingPayment && (
         <div className="mb-8">
           <h3 className="font-black text-gray-800 mb-4 px-2">포인트 충전</h3>
@@ -191,32 +185,23 @@ export const PointAndPass = () => {
                 onClick={() => handleRequestCharge(amount)}
                 className="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm text-left active:scale-95 transition-all"
               >
-                <p className="text-blue-500 text-[10px] font-bold">
-                  +{amount.toLocaleString()}P
-                </p>
-                <p className="text-gray-900 font-black">
-                  {(amount + CHARGE_FEE).toLocaleString()}원
-                </p>
+                <p className="text-blue-500 text-[10px] font-bold">+{amount.toLocaleString()}P</p>
+                <p className="text-gray-900 font-black">{(amount + CHARGE_FEE).toLocaleString()}원</p>
               </button>
             ))}
           </div>
         </div>
       )}
 
-      {/* 학기권 상태 */}
       <div className="bg-white rounded-[2rem] p-6 shadow-sm border border-gray-100">
         <h3 className="font-black text-gray-800 mb-4">시외 학기권 상태</h3>
         {hasPass ? (
           <div className="bg-green-50 p-4 rounded-2xl border border-green-100">
-            <p className="text-green-700 font-black text-sm">ACTIVE PASS ✅</p>
-            <p className="text-green-600 text-xs font-bold italic">
-              만료 예정: {expiryDate}
-            </p>
+            <p className="text-green-700 font-black text-sm">정기권이 활성화 되었습니다! ✅</p>
+            <p className="text-green-600 text-xs font-bold italic">만료 예정: {expiryDate}</p>
           </div>
         ) : (
-          <div className="text-gray-500 text-sm py-4">
-            보유 중인 학기권이 없습니다.
-          </div>
+          <div className="text-gray-500 text-sm py-4">보유 중인 학기권이 없습니다.</div>
         )}
       </div>
     </div>
