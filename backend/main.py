@@ -38,6 +38,10 @@ class ResetPasswordRequest(BaseModel):
     code: str
     new_password: str
 
+class PhoneUpdateRequest(BaseModel):
+    user_id: int
+    phone: str
+
 # --- [실시간 데이터 관리 (테스트용 랜덤 제거)] ---
 # 실제 서비스에서는 이 데이터를 버스 기사용 앱이 업데이트하거나 DB에서 관리합니다.
 bus_realtime_locations = {
@@ -178,3 +182,22 @@ def charge_points(request: ChargeRequest, db: Session = Depends(get_db)):
     user.points += request.amount
     db.commit()
     return {"points": user.points, "status": "success"}
+
+# (8) 마이페이지>전화번호 변경
+@app.post("/api/user/update-phone")
+def update_user_phone(request: PhoneUpdateRequest, db: Session = Depends(get_db)):
+    # 1. 유저 찾기
+    user = db.query(models.User).filter(models.User.id == request.user_id).first()
+    
+    if not user:
+        raise HTTPException(status_code=404, detail="유저를 찾을 수 없습니다.")
+    
+    # 2. 연락처 업데이트 (models.User에 phone 컬럼이 있어야 함)
+    try:
+        user.phone = request.phone
+        db.commit()
+        return {"message": "연락처가 성공적으로 수정되었습니다.", "status": "success"}
+    except Exception as e:
+        db.rollback()
+        logger.error(f"연락처 수정 에러: {e}")
+        raise HTTPException(status_code=500, detail="데이터베이스 업데이트 실패")
