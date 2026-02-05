@@ -1,8 +1,10 @@
 import { useState, useEffect, useCallback } from "react";
 import { logout } from "../utils/auth";
 import api from "../utils/api"; 
+import { useNavigate } from "react-router-dom";
 
 export const MyPage = () => {
+  const navigate = useNavigate();
   const [studentId, setStudentId] = useState<string>("");
   const [points, setPoints] = useState<number>(0);
   const [phone, setPhone] = useState<string>("");
@@ -31,8 +33,6 @@ export const MyPage = () => {
       });
 
       if (response.data) {
-        // ✅ [수정 파트] 학번 동적 결정 로직
-        // 서버의 studentId -> 이메일 앞자리 -> 기존 로컬 스토리지 데이터 순으로 확인
         const dynamicStudentId = 
           response.data.studentId || 
           response.data.email?.split("@")[0] || 
@@ -44,7 +44,6 @@ export const MyPage = () => {
         setPhone(response.data.phone || "010-0000-0000");
         setTempPhone(response.data.phone || "010-0000-0000");
 
-        // 로컬 스토리지 데이터 최신화 (학번 정보 포함하여 저장)
         localStorage.setItem("user", JSON.stringify({ ...response.data, studentId: dynamicStudentId }));
       }
     } catch (error) {
@@ -74,7 +73,6 @@ export const MyPage = () => {
       });
 
       setPhone(tempPhone);
-      // 로컬 스토리지 내 휴대폰 번호도 동기화
       const updatedUser = { ...user, phone: tempPhone };
       localStorage.setItem("user", JSON.stringify(updatedUser));
       
@@ -83,6 +81,38 @@ export const MyPage = () => {
     } catch (error) {
       console.error("연락처 수정 실패:", error);
       alert("수정사항을 서버에 저장하지 못했습니다.");
+    }
+  };
+
+  // [기능 3] 회원 탈퇴
+  const handleDeleteAccount = async () => {
+    const confirmDelete = window.confirm(
+      "정말로 탈퇴하시겠습니까?\n탈퇴 시 모든 포인트와 정보가 삭제되며 복구할 수 없습니다."
+    );
+
+    if (confirmDelete) {
+      const password = window.prompt("본인 확인을 위해 비밀번호를 입력해주세요.");
+      
+      if (!password) return;
+
+      try {
+        const user = JSON.parse(localStorage.getItem("user") || "{}");
+        const userId = user.user_id || user.id;
+
+        const response = await api.post("/auth/delete-account", {
+          user_id: userId,
+          password: password
+        });
+
+        if (response.data.status === "success") {
+          alert("회원 탈퇴가 완료되었습니다. 이용해 주셔서 감사합니다.");
+          localStorage.clear();
+          navigate("/"); // 메인 또는 로그인 페이지로 이동
+        }
+      } catch (error: any) {
+        console.error("탈퇴 실패:", error);
+        alert(error.response?.data?.detail || "비밀번호가 틀렸거나 탈퇴 처리 중 오류가 발생했습니다.");
+      }
     }
   };
 
@@ -112,7 +142,6 @@ export const MyPage = () => {
             <p className="text-[#8E8E93] text-[10px] font-bold uppercase tracking-widest mb-1">
               Student ID
             </p>
-            {/* ✅ 동적으로 업데이트된 학번 표시 */}
             <h2 className="text-xl font-black text-gray-900">{studentId}</h2>
           </div>
 
@@ -159,12 +188,19 @@ export const MyPage = () => {
         </div>
       </div>
 
-      <div className="mt-auto pb-12">
+      <div className="mt-auto space-y-3 pb-8">
         <button
           onClick={logout}
-          className="w-full py-5 bg-red-50 text-red-500 rounded-[1.5rem] font-black text-lg transition-all active:bg-red-100"
+          className="w-full py-5 bg-white text-gray-400 rounded-[1.5rem] font-bold text-lg transition-all active:bg-gray-100 border border-gray-200"
         >
           로그아웃
+        </button>
+        
+        <button
+          onClick={handleDeleteAccount}
+          className="w-full py-4 text-red-400 rounded-[1.5rem] font-medium text-sm transition-all active:text-red-600 opacity-60 hover:opacity-100"
+        >
+          회원 탈퇴하기
         </button>
       </div>
     </div>
