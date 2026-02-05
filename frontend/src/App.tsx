@@ -16,15 +16,17 @@ import { ForgotPassword } from "./pages/ForgotPassword";
 // 기존 서비스 페이지 컴포넌트들 임포트
 import { Home } from "./pages/Home";
 import { BusTrackingPage } from "./pages/BusTrackingPage";
-import { Messages } from "./pages/Messages";
 import { PointAndPass } from "./pages/PointAndPass";
 import { Ticket } from "./pages/Ticket";
 import { MyPage } from "./pages/Mypage";
 import { NfcScanPage } from "./pages/NfcScanPage";
 
+// ✅ 쪽지 기능 관련 (중복 임포트 제거 및 정리)
+import { Messages } from "./pages/Messages";
+import { MessageDetail } from "./pages/MessageDetail";
+
 /**
  * [제어] 하단 내비게이션 바 노출 여부 결정
- * 인증 토큰('token')이 있고, 특정 인증 페이지가 아닐 때만 하단바를 보여줍니다.
  */
 const NavigationWrapper = () => {
   const location = useLocation();
@@ -43,7 +45,6 @@ const NavigationWrapper = () => {
 
 /**
  * [보안] 인증 체크 컴포넌트
- * 로그인하지 않은 사용자가 서비스 페이지에 접근하면 로그인으로 리다이렉트합니다.
  */
 const PrivateRoute = ({ children }: { children: React.ReactNode }) => {
   const isAuthenticated = localStorage.getItem("token");
@@ -64,7 +65,7 @@ function App() {
 
             {/* --- [보호된 서비스 경로] --- */}
 
-            {/* 1. 홈 (전체 노선 및 즐겨찾기 토글 관리) */}
+            {/* 1. 홈 */}
             <Route
               path="/"
               element={
@@ -84,7 +85,7 @@ function App() {
               }
             />
 
-            {/* 3. 쪽지함/알림 */}
+            {/* 3. 쪽지함 목록 */}
             <Route
               path="/messages"
               element={
@@ -94,7 +95,17 @@ function App() {
               }
             />
 
-            {/* 4. 포인트/학기권 충전 */}
+            {/* ✅ 4. 쪽지 상세 보기 (로그인 체크 적용) */}
+            <Route
+              path="/messages/:id"
+              element={
+                <PrivateRoute>
+                  <MessageDetail />
+                </PrivateRoute>
+              }
+            />
+
+            {/* 5. 포인트/학기권 충전 */}
             <Route
               path="/points"
               element={
@@ -104,7 +115,7 @@ function App() {
               }
             />
 
-            {/* 5. 승차권 상세 (NFC/QR) */}
+            {/* 6. 승차권 상세 (NFC/QR) */}
             <Route
               path="/ticket/:id"
               element={
@@ -114,7 +125,7 @@ function App() {
               }
             />
 
-            {/* 6. 학생증 NFC 스캔 */}
+            {/* 7. 학생증 NFC 스캔 */}
             <Route
               path="/nfc-scan"
               element={
@@ -124,7 +135,7 @@ function App() {
               }
             />
 
-            {/* 7. 마이페이지 */}
+            {/* 8. 마이페이지 */}
             <Route
               path="/mypage"
               element={
