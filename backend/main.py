@@ -142,6 +142,7 @@ def reset_password(request: ResetPasswordRequest, db: Session = Depends(get_db))
 
 # (3) 회원가입
 @app.post("/api/auth/signup")
+@app.post("/api/api/auth/signup")
 def signup(email: str, password: str, name: str, code: str, db: Session = Depends(get_db)):
     if verification_codes.get(email) != code:
         raise HTTPException(status_code=400, detail="인증번호가 일치하지 않습니다.")
@@ -155,6 +156,7 @@ def signup(email: str, password: str, name: str, code: str, db: Session = Depend
 
 # (4) 로그인
 @app.post("/api/auth/login")
+@app.post("/api/api/auth/login")
 def login(email: str, password: str, db: Session = Depends(get_db)):
     user = db.query(models.User).filter(models.User.email == email).first()
     if not user or user.hashed_password != password:
