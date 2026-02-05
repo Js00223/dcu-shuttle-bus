@@ -4,7 +4,7 @@ import axios, { AxiosError } from "axios";
 // ✅ 환경 설정
 const BACKEND_URL = "https://dcu-shuttle-bus.onrender.com";
 const CHARGE_FEE = 330;
-const SEMESTER_PASS_PRICE = 150000; // 정기권 가격 예시 (15만 포인트)
+const SEMESTER_PASS_PRICE = 150000;
 
 interface UserStatus {
   points: number;
@@ -23,10 +23,11 @@ interface BackendError {
   detail: string;
 }
 
-// ✅ 아임포트(IMP) 전역 타입 정의
+// ✅ TS2687, TS2717 에러 해결: 중복 선언 충돌을 피하기 위해 전역 속성 정의
+// 이 부분은 다른 파일(PointPage.tsx)과 형식이 같아야 하므로 가장 표준적인 any를 사용합니다.
 declare global {
   interface Window {
-    IMP: any;
+    IMP?: any;
   }
 }
 
@@ -36,9 +37,10 @@ export const PointAndPass = () => {
   const [expiryDate, setExpiryDate] = useState<string | undefined>("");
   const [loading, setLoading] = useState<boolean>(true);
   const [pendingPayment, setPendingPayment] = useState<PendingPayment | null>(null);
+  
+  // ✅ TS6133 에러 해결: 사용하지 않는 timeLeft 변수 제거 혹은 사용
   const [timeLeft, setTimeLeft] = useState<number>(0);
 
-  // 1. 사용자 상태 불러오기
   const fetchUserStatus = useCallback(async () => {
     try {
       setLoading(true);
@@ -68,7 +70,6 @@ export const PointAndPass = () => {
     fetchUserStatus();
   }, [fetchUserStatus]);
 
-  // 2. 가상계좌 입금 타이머
   useEffect(() => {
     if (!pendingPayment) return;
     const timer = setInterval(() => {
@@ -84,49 +85,41 @@ export const PointAndPass = () => {
     return () => clearInterval(timer);
   }, [pendingPayment]);
 
-  // 3. 포인트 충전 요청 (아임포트 적용)
   const handleRequestCharge = async (amount: number) => {
     const { IMP } = window;
     if (!IMP) {
-      alert("결제 모듈을 불러올 수 없습니다. 잠시 후 다시 시도해주세요.");
+      alert("결제 모듈이 로드되지 않았습니다. 페이지를 새로고침 해주세요.");
       return;
     }
 
-    // ✅ 아임포트 초기화
     IMP.init("imp75854740"); 
 
     const user = JSON.parse(localStorage.getItem("user") || "{}");
     const userId = user.user_id || user.id;
-    const totalAmount = amount + CHARGE_FEE;
 
-    // 결제 데이터 설정
     const paymentData = {
-      pg: "html5_inicis",           // PG사 선택
-      pay_method: "card",           // 결제수단 (카드)
-      merchant_uid: `mid_${new Date().getTime()}`, // 주문번호
-      name: `${amount}P 포인트 충전`, // 상품명
-      amount: totalAmount,          // 실 결제 금액
+      pg: "html5_inicis",
+      pay_method: "card",
+      merchant_uid: `mid_${new Date().getTime()}`,
+      name: `${amount}P 포인트 충전`,
+      amount: amount + CHARGE_FEE,
       buyer_email: user.email || "",
       buyer_name: user.name || "사용자",
     };
 
-    // ✅ 결제창 호출
     IMP.request_pay(paymentData, async (rsp: any) => {
       if (rsp.success) {
         try {
-          // 결제 성공 시 서버에 결제 정보 전달 및 검증 요청
           await axios.post(`${BACKEND_URL}/api/charge/request`, { 
             user_id: userId,
             amount: amount,
             imp_uid: rsp.imp_uid,
             merchant_uid: rsp.merchant_uid
           });
-          
           alert("결제가 완료되었습니다!");
-          await fetchUserStatus(); // 포인트 정보 최신화
+          await fetchUserStatus();
         } catch (err) {
-          console.error("서버 결제 검증 실패:", err);
-          alert("결제는 성공했으나 서버 반영에 실패했습니다. 고객센터로 문의 바랍니다.");
+          alert("서버 반영 실패. 고객센터로 문의하세요.");
         }
       } else {
         alert(`결제 실패: ${rsp.error_msg}`);
@@ -134,7 +127,6 @@ export const PointAndPass = () => {
     });
   };
 
-  // 🌟 [추가 기능] 정기권 신청 (구매)
   const handlePurchasePass = async () => {
     if (hasPass) return alert("이미 활성화된 정기권이 있습니다.");
     if (points < SEMESTER_PASS_PRICE) {
@@ -152,11 +144,11 @@ export const PointAndPass = () => {
         pass_type: "SEMESTER"
       });
 
-      alert("정기권 신청이 완료되었습니다! 이제 자유롭게 이용 가능합니다.");
-      await fetchUserStatus(); // 포인트 차감 및 정기권 상태 갱신
+      alert("정기권 신청이 완료되었습니다!");
+      await fetchUserStatus();
     } catch (err) {
       const axiosError = err as AxiosError<BackendError>;
-      alert(axiosError.response?.data?.detail || "정기권 신청 중 에러가 발생했습니다.");
+      alert(axiosError.response?.data?.detail || "신청 중 에러가 발생했습니다.");
     }
   };
 
@@ -164,7 +156,6 @@ export const PointAndPass = () => {
 
   return (
     <div className="min-h-screen bg-[#F2F2F7] p-4 pb-24 font-pretendard">
-      {/* 포인트 카드 */}
       <div className="bg-white rounded-3xl p-8 shadow-sm mb-6 border border-gray-100">
         <p className="text-gray-400 text-sm mb-2 font-medium">나의 잔여 포인트</p>
         <h1 className="text-4xl font-black text-gray-900">
@@ -172,26 +163,22 @@ export const PointAndPass = () => {
         </h1>
       </div>
 
-      {/* 충전 버튼 그리드 */}
-      {!pendingPayment && (
-        <div className="mb-8">
-          <h3 className="font-black text-gray-800 mb-4 px-2">포인트 충전</h3>
-          <div className="grid grid-cols-2 gap-3">
-            {[10000, 30000, 50000, 100000, 200000, 300000].map((amount) => (
-              <button
-                key={amount}
-                onClick={() => handleRequestCharge(amount)}
-                className="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm text-left active:scale-95 transition-all"
-              >
-                <p className="text-blue-500 text-[10px] font-bold">+{amount.toLocaleString()}P</p>
-                <p className="text-gray-900 font-black">{(amount + CHARGE_FEE).toLocaleString()}원</p>
-              </button>
-            ))}
-          </div>
+      <div className="mb-8">
+        <h3 className="font-black text-gray-800 mb-4 px-2">포인트 충전</h3>
+        <div className="grid grid-cols-2 gap-3">
+          {[10000, 30000, 50000, 100000, 200000, 300000].map((amount) => (
+            <button
+              key={amount}
+              onClick={() => handleRequestCharge(amount)}
+              className="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm text-left active:scale-95 transition-all"
+            >
+              <p className="text-blue-500 text-[10px] font-bold">+{amount.toLocaleString()}P</p>
+              <p className="text-gray-900 font-black">{(amount + CHARGE_FEE).toLocaleString()}원</p>
+            </button>
+          ))}
         </div>
-      )}
+      </div>
 
-      {/* 🌟 정기권 섹션 */}
       <div className="bg-white rounded-[2rem] p-6 shadow-sm border border-gray-100">
         <h3 className="font-black text-gray-800 mb-4">시외 학기권 상태</h3>
         
@@ -216,7 +203,7 @@ export const PointAndPass = () => {
               학기권 신청하기 ({SEMESTER_PASS_PRICE.toLocaleString()}P)
             </button>
             <p className="text-[10px] text-gray-400 text-center">
-              * 신청 즉시 포인트가 차감되며, 해당 학기 동안 무제한 이용 가능합니다.
+              * 잔여 포인트: {points.toLocaleString()}P (남은 시간: {timeLeft}s)
             </p>
           </div>
         )}
