@@ -23,9 +23,9 @@ logger = logging.getLogger(__name__)
 
 app = FastAPI()
 
-# --- [설정: 구글 SMTP IP 주소 직접 지정 및 환경변수] ---
+# --- [설정: 구글 SMTP 설정 변경] ---
 SMTP_SERVER = "smtp.gmail.com"
-SMTP_PORT = 465
+SMTP_PORT = 465 # SSL 전용 포트로 변경
 SMTP_USER = os.getenv("SMTP_USER", "j020218hh@gmail.com")
 SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", "heyxdsgbbzjtmngc")
 
@@ -60,7 +60,7 @@ bus_realtime_locations = {
     2: {"lat": 35.8530, "lng": 128.7330, "status": "running", "bus_name": "반월당 방면"}
 }
 
-# --- [메일 발송 함수] ---
+# --- [메일 발송 함수: SMTP_SSL 및 465 포트 적용] ---
 def send_real_email(receiver_email: str, code: str):
     try:
         msg = MIMEMultipart()
@@ -70,8 +70,8 @@ def send_real_email(receiver_email: str, code: str):
         content = f"안녕하세요. 인증번호는 [{code}] 입니다."
         msg.attach(MIMEText(content, 'plain'))
         
-        server = smtplib.SMTP(SMTP_SERVER, SMTP_PORT, timeout=10)
-        server.starttls()
+        # 💡 [Errno 101] 해결을 위해 SMTP_SSL을 사용하여 465 포트로 보안 연결 시도
+        server = smtplib.SMTP_SSL(SMTP_SERVER, SMTP_PORT, timeout=15)
         server.login(SMTP_USER, SMTP_PASSWORD)
         server.sendmail(SMTP_USER, receiver_email, msg.as_string())
         server.quit()
@@ -124,6 +124,7 @@ def send_verification_code(email: str):
     if email_sent:
         return {"message": "인증번호가 발송되었습니다.", "status": "success"}
     else:
+        # 네트워크 차단 시 프론트엔드에서 인증번호를 즉시 확인할 수 있도록 응답에 포함
         logger.warning(f"⚠️ [비상모드] 메일 발송 실패. 대신 인증번호를 반환함: {code}")
         return {
             "message": "메일 서버 연결 불안정으로 인해 테스트 코드가 발송되었습니다.",
@@ -166,7 +167,7 @@ def login(email: str, password: str, db: Session = Depends(get_db)):
         raise HTTPException(status_code=401, detail="정보가 불일치합니다.")
     return {"user_id": user.id, "name": user.name, "points": user.points, "status": "success"}
 
-# (12) 회원 탈퇴 (경로 404 원천 봉쇄를 위해 3가지 경로 모두 허용)
+# (12) 회원 탈퇴
 @app.post("/api/auth/delete-account")
 @app.post("/api/api/auth/delete-account")
 @app.post("/auth/delete-account")
