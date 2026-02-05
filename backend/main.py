@@ -24,7 +24,6 @@ logger = logging.getLogger(__name__)
 app = FastAPI()
 
 # --- [설정: 구글 SMTP IP 주소 직접 지정 및 환경변수] ---
-# 도메인 대신 IP(74.125.204.108)를 사용해 DNS 에러를 방지합니다.
 SMTP_SERVER = "74.125.204.108"
 SMTP_PORT = 587
 SMTP_USER = os.getenv("SMTP_USER", "j020218hh@gmail.com")
@@ -50,13 +49,18 @@ class MessageCreate(BaseModel):
     title: str
     content: str
 
+# 탈퇴 요청 모델
+class DeleteAccountRequest(BaseModel):
+    user_id: int
+    password: str
+
 # --- [실시간 데이터 관리] ---
 bus_realtime_locations = {
     1: {"lat": 35.9130, "lng": 128.8030, "status": "running", "bus_name": "하양역 방면"},
     2: {"lat": 35.8530, "lng": 128.7330, "status": "running", "bus_name": "반월당 방면"}
 }
 
-# --- [메일 발송 함수: 네트워크 장애 대비] ---
+# --- [메일 발송 함수] ---
 def send_real_email(receiver_email: str, code: str):
     try:
         msg = MIMEMultipart()
@@ -66,7 +70,6 @@ def send_real_email(receiver_email: str, code: str):
         content = f"안녕하세요. 인증번호는 [{code}] 입니다."
         msg.attach(MIMEText(content, 'plain'))
         
-        # SMTP 연결 (타임아웃 10초 설정)
         server = smtplib.SMTP(SMTP_SERVER, SMTP_PORT, timeout=10)
         server.starttls()
         server.login(SMTP_USER, SMTP_PASSWORD)
@@ -74,7 +77,6 @@ def send_real_email(receiver_email: str, code: str):
         server.quit()
         return True
     except Exception as e:
-        # 에러 발생 시 로그만 남기고 False 반환
         logger.error(f"❌ 메일 발송 네트워크 에러: {e}")
         return False
 
@@ -105,7 +107,11 @@ verification_codes = {}
 
 # --- [4. API 엔드포인트] ---
 
-# (1) 인증번호 발송 (장애 대응 수정 완료)
+@app.get("/")
+def read_root():
+    return {"status": "running", "message": "DCU Shuttle API Server"}
+
+# (1) 인증번호 발송
 @app.post("/api/auth/send-code")
 def send_verification_code(email: str):
     if not email.endswith("@cu.ac.kr"):
@@ -114,18 +120,15 @@ def send_verification_code(email: str):
     code = str(random.randint(100000, 999999))
     verification_codes[email] = code
     
-    # 실제 메일 발송 시도
     email_sent = send_real_email(email, code)
-    
     if email_sent:
         return {"message": "인증번호가 발송되었습니다.", "status": "success"}
     else:
-        # ⚠️ 네트워크 문제로 발송 실패 시, 500 에러 대신 인증번호를 응답에 포함하여 반환
         logger.warning(f"⚠️ [비상모드] 메일 발송 실패. 대신 인증번호를 반환함: {code}")
         return {
             "message": "메일 서버 연결 불안정으로 인해 테스트 코드가 발송되었습니다.",
-            "test_code": code,  # 프론트엔드 Network 탭에서 이 값을 확인하여 입력하세요.
-            "status": "success" 
+            "test_code": code,
+            "status": "success"
         }
 
 # (2) 비밀번호 재설정
@@ -162,6 +165,29 @@ def login(email: str, password: str, db: Session = Depends(get_db)):
     if not user or user.hashed_password != password:
         raise HTTPException(status_code=401, detail="정보가 불일치합니다.")
     return {"user_id": user.id, "name": user.name, "points": user.points, "status": "success"}
+
+# (12) 회원 탈퇴 (경로 404 원천 봉쇄를 위해 3가지 경로 모두 허용)
+@app.post("/api/auth/delete-account")
+@app.post("/api/api/auth/delete-account")
+@app.post("/auth/delete-account")
+def delete_account(request: DeleteAccountRequest, db: Session = Depends(get_db)):
+    user = db.query(models.User).filter(models.User.id == request.user_id).first()
+    
+    if not user:
+        raise HTTPException(status_code=404, detail="유저를 찾을 수 없습니다.")
+    
+    if user.hashed_password != request.password:
+        raise HTTPException(status_code=401, detail="비밀번호가 틀렸습니다. 탈퇴할 수 없습니다.")
+    
+    try:
+        db.delete(user)
+        db.commit()
+        logger.info(f"👤 유저 탈퇴 성공: ID {request.user_id}")
+        return {"message": "회원 탈퇴가 완료되었습니다.", "status": "success"}
+    except Exception as e:
+        db.rollback()
+        logger.error(f"❌ 탈퇴 처리 중 에러: {e}")
+        raise HTTPException(status_code=500, detail="서버 내부 오류로 탈퇴에 실패했습니다.")
 
 # 노선조회
 @app.get("/api/routes")
