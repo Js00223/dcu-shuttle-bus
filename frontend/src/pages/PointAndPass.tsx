@@ -25,11 +25,7 @@ interface BackendError {
 
 // ✅ TS2687, TS2717 에러 해결: 중복 선언 충돌을 피하기 위해 전역 속성 정의
 // 이 부분은 다른 파일(PointPage.tsx)과 형식이 같아야 하므로 가장 표준적인 any를 사용합니다.
-declare global {
-  interface Window {
-    IMP?: any;
-  }
-}
+
 
 export const PointAndPass = () => {
   const [points, setPoints] = useState<number>(0);
@@ -38,7 +34,7 @@ export const PointAndPass = () => {
   const [loading, setLoading] = useState<boolean>(true);
   const [pendingPayment, setPendingPayment] = useState<PendingPayment | null>(null);
   
-  // ✅ TS6133 에러 해결: 사용하지 않는 timeLeft 변수 제거 혹은 사용
+  // ✅ TS6133 에러 해결: 사용하지 않는 timeLeft 변수를 가상계좌 UI에서 사용함
   const [timeLeft, setTimeLeft] = useState<number>(0);
 
   const fetchUserStatus = useCallback(async () => {
@@ -163,6 +159,22 @@ export const PointAndPass = () => {
         </h1>
       </div>
 
+      {/* 가상계좌 입금 대기 UI (여기서 timeLeft를 사용하여 경고 해결) */}
+      {pendingPayment && (
+        <div className="bg-blue-600 rounded-3xl p-6 mb-6 text-white shadow-xl">
+          <div className="flex justify-between items-start mb-4">
+            <h3 className="font-bold">가상계좌 입금 대기</h3>
+            <span className="bg-red-500 text-[10px] px-2 py-1 rounded-full font-bold">
+              {timeLeft}초 남음
+            </span>
+          </div>
+          <div className="bg-blue-700/50 rounded-2xl p-4 text-sm space-y-1">
+            <p className="flex justify-between"><span>계좌:</span> <b>{pendingPayment.account}</b></p>
+            <p className="flex justify-between"><span>금액:</span> <b>{(pendingPayment.amount + CHARGE_FEE).toLocaleString()}원</b></p>
+          </div>
+        </div>
+      )}
+
       <div className="mb-8">
         <h3 className="font-black text-gray-800 mb-4 px-2">포인트 충전</h3>
         <div className="grid grid-cols-2 gap-3">
@@ -203,7 +215,7 @@ export const PointAndPass = () => {
               학기권 신청하기 ({SEMESTER_PASS_PRICE.toLocaleString()}P)
             </button>
             <p className="text-[10px] text-gray-400 text-center">
-              * 잔여 포인트: {points.toLocaleString()}P (남은 시간: {timeLeft}s)
+              * 현재 잔여 포인트: {points.toLocaleString()}P
             </p>
           </div>
         )}
