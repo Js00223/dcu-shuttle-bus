@@ -232,11 +232,24 @@ def get_bus_location(bus_id: int, user_lat: float, user_lng: float):
 # (6) 내 정보 조회
 @app.get("/api/user/status")
 def get_user_status(user_id: int, db: Session = Depends(get_db)):
-    user = db.query(models.User).filter(models.User.id == user_id).first()
-    if not user:
-        raise HTTPException(status_code=404, detail="유저 없음")
-    return {"user_id": user.id, "name": user.name, "points": user.points, "email":user.email, "phone":user.phone}
-
+    try:
+        user = db.query(models.User).filter(models.User.id == user_id).first()
+        if not user:
+            logger.warning(f"⚠️ 유저 없음: ID {user_id}")
+            raise HTTPException(status_code=404, detail="유저 정보를 찾을 수 없습니다.")
+        
+        # 데이터가 있는 것만 안전하게 추출 (getattr 사용 시 에러 방지)
+        return {
+            "user_id": user.id,
+            "name": getattr(user, "name", "이름 없음"),
+            "points": getattr(user, "points", 0),
+            "email": getattr(user, "email", ""),
+            "phone": getattr(user, "phone", "정보 없음") 
+        }
+    except Exception as e:
+        logger.error(f"❌ 마이페이지 조회 중 서버 에러: {e}")
+        raise HTTPException(status_code=500, detail="서버 내부 오류가 발생했습니다.")
+        
 # (7) 포인트 충전
 @app.post("/api/charge/request")
 def charge_points(request: ChargeRequest, db: Session = Depends(get_db)):
