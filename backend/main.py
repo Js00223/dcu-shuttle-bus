@@ -61,6 +61,11 @@ class FavoriteToggleRequest(BaseModel):
     user_id: int
     route_id: int
 
+# 예약 요청 모델 (추가됨)
+class ReserveRequest(BaseModel):
+    user_id: int
+    route_id: int
+
 # --- [실시간 데이터 관리] ---
 bus_realtime_locations = {
     1: {"lat": 35.9130, "lng": 128.8030, "status": "running", "bus_name": "하양역 방면"},
@@ -187,7 +192,7 @@ def signup(email: str, password: str, name: str, code: str, db: Session = Depend
         db.rollback()
         raise HTTPException(status_code=500, detail="가입 처리 중 오류 발생")
 
-# (4) 로그인 (즐겨찾기 목록 추가)
+# (4) 로그인
 @app.post("/api/auth/login")
 @app.post("/api/api/auth/login")
 def login(email: str, password: str, db: Session = Depends(get_db)):
@@ -195,14 +200,13 @@ def login(email: str, password: str, db: Session = Depends(get_db)):
     if not user or user.hashed_password != password:
         raise HTTPException(status_code=401, detail="정보가 불일치합니다.")
     
-    # 해당 유저의 즐겨찾기 노선 ID 리스트 가져오기
     fav_ids = [f.route_id for f in db.query(models.Favorite).filter(models.Favorite.user_id == user.id).all()]
     
     return {
         "user_id": user.id, 
         "name": user.name, 
         "points": user.points, 
-        "favorites": fav_ids, # 로그인 시 즐겨찾기 정보 전달
+        "favorites": fav_ids,
         "status": "success"
     }
 
@@ -219,11 +223,9 @@ def delete_account(request: DeleteAccountRequest, db: Session = Depends(get_db))
     try:
         db.delete(user)
         db.commit()
-        logger.info(f"👤 유저 탈퇴 성공: ID {request.user_id}")
         return {"message": "회원 탈퇴가 완료되었습니다.", "status": "success"}
     except Exception as e:
         db.rollback()
-        logger.error(f"❌ 탈퇴 처리 중 에러: {e}")
         raise HTTPException(status_code=500, detail="탈퇴 실패")
 
 # 노선조회
@@ -246,29 +248,23 @@ def get_bus_location(bus_id: int, user_lat: float, user_lng: float):
         "last_update": datetime.datetime.now().isoformat()
     }
 
-# (6) 내 정보 조회 (즐겨찾기 포함)
+# (6) 내 정보 조회
 @app.get("/api/user/status")
 def get_user_status(user_id: int, db: Session = Depends(get_db)):
-    try:
-        user = db.query(models.User).filter(models.User.id == user_id).first()
-        if not user:
-            logger.warning(f"⚠️ 유저 없음: ID {user_id}")
-            raise HTTPException(status_code=404, detail="유저 정보를 찾을 수 없습니다.")
-        
-        # 즐겨찾기 목록 조회
-        fav_ids = [f.route_id for f in db.query(models.Favorite).filter(models.Favorite.user_id == user.id).all()]
-        
-        return {
-            "user_id": user.id,
-            "name": getattr(user, "name", "이름 없음"),
-            "points": getattr(user, "points", 0),
-            "email": getattr(user, "email", ""),
-            "phone": getattr(user, "phone", "정보 없음"),
-            "favorites": fav_ids # 기기 간 동기화를 위한 필드
-        }
-    except Exception as e:
-        logger.error(f"❌ 마이페이지 조회 중 서버 에러: {e}")
-        raise HTTPException(status_code=500, detail="서버 내부 오류가 발생했습니다.")
+    user = db.query(models.User).filter(models.User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="유저 정보를 찾을 수 없습니다.")
+    
+    fav_ids = [f.route_id for f in db.query(models.Favorite).filter(models.Favorite.user_id == user.id).all()]
+    
+    return {
+        "user_id": user.id,
+        "name": getattr(user, "name", "이름 없음"),
+        "points": getattr(user, "points", 0),
+        "email": getattr(user, "email", ""),
+        "phone": getattr(user, "phone", "정보 없음"),
+        "favorites": fav_ids
+    }
         
 # (7) 포인트 충전
 @app.post("/api/charge/request")
@@ -279,96 +275,103 @@ def charge_points(request: ChargeRequest, db: Session = Depends(get_db)):
     
     try:
         user.points += request.amount
-        db.add(user) 
         db.commit()   
         db.refresh(user)
-        logger.info(f"💰 포인트 충전 완료: ID {user.id}, 현재 포인트: {user.points}")
         return {"points": user.points, "status": "success"}
     except Exception as e:
         db.rollback()
-        logger.error(f"❌ 포인트 충전 실패: {e}")
         raise HTTPException(status_code=500, detail="충전 중 오류 발생")
 
 # (8) 마이페이지 > 전화번호 변경
 @app.post("/api/user/update-phone")
 def update_user_phone(request: PhoneUpdateRequest, db: Session = Depends(get_db)):
-    logger.info(f"📱 전화번호 변경 시도 - ID: {request.user_id}, Phone: {request.phone}")
-
     user = db.query(models.User).filter(models.User.id == request.user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="유저를 찾을 수 없습니다.")
     
     try:
         user.phone = request.phone
-        db.add(user) 
         db.commit() 
         db.refresh(user) 
-        
-        logger.info(f"✅ 유저 ID {request.user_id} 저장 완료: {user.phone}")
-        return {
-            "message": "연락처가 서버에 저장되었습니다.", 
-            "status": "success",
-            "current_phone": user.phone
-        }
+        return {"message": "연락처가 저장되었습니다.", "status": "success", "current_phone": user.phone}
     except Exception as e:
         db.rollback()
-        logger.error(f"❌ DB 저장 중 오류: {e}")
         raise HTTPException(status_code=500, detail="서버 저장 실패")
 
-# --- [추가: 즐겨찾기 토글 API] ---
+# (9) 즐겨찾기 토글
 @app.post("/api/user/toggle-favorite")
 def toggle_favorite(request: FavoriteToggleRequest, db: Session = Depends(get_db)):
     try:
-        # 이미 존재하는지 확인
         fav = db.query(models.Favorite).filter(
             models.Favorite.user_id == request.user_id,
             models.Favorite.route_id == request.route_id
         ).first()
 
         if fav:
-            # 있으면 삭제 (언즐겨찾기)
             db.delete(fav)
-            db.commit()
-            return {"status": "success", "action": "removed", "favorites": [f.route_id for f in db.query(models.Favorite).filter(models.Favorite.user_id == request.user_id).all()]}
+            action = "removed"
         else:
-            # 없으면 추가
             new_fav = models.Favorite(user_id=request.user_id, route_id=request.route_id)
             db.add(new_fav)
-            db.commit()
-            return {"status": "success", "action": "added", "favorites": [f.route_id for f in db.query(models.Favorite).filter(models.Favorite.user_id == request.user_id).all()]}
-            
+            action = "added"
+        
+        db.commit()
+        new_fav_ids = [f.route_id for f in db.query(models.Favorite).filter(models.Favorite.user_id == request.user_id).all()]
+        return {"status": "success", "action": action, "favorites": new_fav_ids}
     except Exception as e:
         db.rollback()
-        logger.error(f"❌ 즐겨찾기 처리 에러: {e}")
-        raise HTTPException(status_code=500, detail="즐겨찾기 처리 중 오류 발생")
+        raise HTTPException(status_code=500, detail="즐겨찾기 처리 실패")
 
-# (9) 쪽지 목록 조회
+# (10) 버스 예약 API (수정 및 추가된 부분)
+@app.post("/api/bookings/reserve")
+def reserve_bus(request: ReserveRequest, db: Session = Depends(get_db)):
+    user = db.query(models.User).filter(models.User.id == request.user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="유저를 찾을 수 없습니다.")
+
+    # 1회 예약 시 500포인트 차감 (예시)
+    fare = 500
+    if user.points < fare:
+        raise HTTPException(status_code=400, detail="포인트가 부족합니다.")
+
+    try:
+        user.points -= fare
+        # 예약 기록 저장 (models.Booking 테이블이 정의되어 있어야 함)
+        new_booking = models.Booking(
+            user_id=request.user_id,
+            route_id=request.route_id,
+            status="reserved"
+        )
+        db.add(new_booking)
+        db.commit()
+        db.refresh(user)
+        return {
+            "status": "success",
+            "message": "예약이 완료되었습니다.",
+            "remaining_points": user.points
+        }
+    except Exception as e:
+        db.rollback()
+        logger.error(f"예약 에러: {e}")
+        raise HTTPException(status_code=500, detail="예약 처리 중 서버 오류")
+
+# (11) 쪽지 목록 조회
 @app.get("/api/messages")
 def get_messages(user_id: int, db: Session = Depends(get_db)):
-    try:
-        messages = db.query(models.Message).filter(
-            models.Message.receiver_id == user_id
-        ).order_by(models.Message.created_at.desc()).all()
-        return messages
-    except Exception as e:
-        logger.error(f"쪽지 목록 조회 에러: {e}")
-        raise HTTPException(status_code=500, detail="서버 내부 에러")
+    messages = db.query(models.Message).filter(models.Message.receiver_id == user_id).order_by(models.Message.created_at.desc()).all()
+    return messages
 
-# (10) 쪽지 상세 조회
+# (12) 쪽지 상세 조회
 @app.get("/api/messages/{message_id}")
 def get_message_detail(message_id: int, db: Session = Depends(get_db)):
     msg = db.query(models.Message).filter(models.Message.id == message_id).first()
     if not msg:
-        raise HTTPException(status_code=404, detail="쪽지를 찾을 수 없습니다.")
-    try:
-        msg.is_read = 1
-        db.add(msg)
-        db.commit()
-    except Exception:
-        db.rollback()
+        raise HTTPException(status_code=404, detail="쪽지 없음")
+    msg.is_read = 1
+    db.commit()
     return msg
 
-# (11) 쪽지 보내기
+# (13) 쪽지 보내기
 @app.post("/api/messages/send")
 def send_message(request: MessageCreate, db: Session = Depends(get_db)):
     try:
@@ -380,37 +383,7 @@ def send_message(request: MessageCreate, db: Session = Depends(get_db)):
         )
         db.add(new_msg)
         db.commit()
-        db.refresh(new_msg)
-        return {"message": "쪽지가 성공적으로 발송되었습니다.", "status": "success"}
+        return {"message": "발송 성공", "status": "success"}
     except Exception as e:
         db.rollback()
-        logger.error(f"쪽지 발송 에러: {e}")
-        raise HTTPException(status_code=500, detail="쪽지 발송 실패")
-const handleReserve = async () => {
-  try {
-    const user = JSON.parse(localStorage.getItem("user") || "{}");
-    const userId = user.user_id || user.id;
-
-    if (!userId) {
-      alert("로그인이 필요합니다.");
-      return;
-    }
-
-# ✅ URL 뒤에 붙이지 말고, 두 번째 인자로 데이터를 보냅니다.
-    const response = await api.post("/bookings/reserve", {
-      user_id: userId,
-      route_id: Number(routeId) // 현재 페이지의 노선 ID
-    });
-
-    if (response.data.status === "success") {
-      alert(`예약 완료! 잔액: ${response.data.remaining_points}P`);
-      // 마이페이지 동기화를 위해 로컬스토리지 포인트 업데이트
-      const updatedUser = { ...user, points: response.data.remaining_points };
-      localStorage.setItem("user", JSON.stringify(updatedUser));
-      navigate("/mypage");
-    }
-  } catch (error: any) {
-    console.error("예약 오류:", error);
-    alert(error.response?.data?.detail || "예약에 실패했습니다.");
-  }
-};
+        raise HTTPException(status_code=500, detail="발송 실패")
