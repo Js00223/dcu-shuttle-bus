@@ -235,7 +235,7 @@ def get_user_status(user_id: int, db: Session = Depends(get_db)):
     user = db.query(models.User).filter(models.User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="유저 없음")
-    return {"user_id": user.id, "name": user.name, "points": user.points}
+    return {"user_id": user.id, "name": user.name, "points": user.points, "email":user.email, "phone":user.phone}
 
 # (7) 포인트 충전
 @app.post("/api/charge/request")
