@@ -1,9 +1,8 @@
-
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { RouteItem } from "../components/RouteItem";
 import { Search } from "lucide-react";
-import api from "../utils/api"; // ✅ 아까 만든 api 인스턴스 가져오기
+import api from "../utils/api"; 
 
 // 노선 데이터 타입 정의
 interface BusRoute {
@@ -15,42 +14,55 @@ interface BusRoute {
 
 export const Home = () => {
   const navigate = useNavigate();
-
   const [routes, setRoutes] = useState<BusRoute[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
+  
+  // 중복 요청 방지용 Ref
+  const isFetching = useRef(false);
 
   // 즐겨찾기 상태 (로컬 스토리지 연동)
   const [favorites, setFavorites] = useState<number[]>(() => {
     const saved = localStorage.getItem("bus-favorites");
-    return saved ? JSON.parse(saved) : [];
+    try {
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
   });
 
-  // 노선 데이터 불러오기
-  useEffect(() => {
-    const fetchRoutes = async () => {
-      try {
-        setIsLoading(true);
+  // [기능 1] 노선 데이터 불러오기
+  const fetchRoutes = useCallback(async () => {
+    if (isFetching.current) return;
 
-        // ✅ fetch 대신 api.get을 사용합니다.
-        // api.ts에 baseURL이 설정되어 있으므로 '/api/routes'만 적으면 됩니다.
-        const response = await api.get("/routes", {
-          params: { t: Date.now() } // 캐시 방지용 파라미터
-        });
+    try {
+      isFetching.current = true;
+      setIsLoading(true);
 
-        // axios는 response.data에 실제 데이터가 들어있습니다.
-        const data = response.data;
-        setRoutes(Array.isArray(data) ? data : []);
-      } catch (error) {
-        console.error("노선 불러오기 실패:", error);
+      const response = await api.get("/routes", {
+        params: { t: Date.now() } // 실시간성 확보 및 캐시 방지
+      });
+
+      if (Array.isArray(response.data)) {
+        setRoutes(response.data);
+      } else {
         setRoutes([]);
-      } finally {
-        setIsLoading(false);
       }
-    };
-    fetchRoutes();
+    } catch (error: any) {
+      if (error.code !== 'ERR_CANCELED') {
+        console.error("노선 불러오기 실패:", error);
+      }
+    } finally {
+      setIsLoading(false);
+      isFetching.current = false;
+    }
   }, []);
 
+  useEffect(() => {
+    fetchRoutes();
+  }, [fetchRoutes]);
+
+  // [기능 2] 즐겨찾기 변경 시 로컬 스토리지 저장
   useEffect(() => {
     localStorage.setItem("bus-favorites", JSON.stringify(favorites));
   }, [favorites]);
@@ -65,6 +77,7 @@ export const Home = () => {
     navigate(`/ticket/${routeId}`);
   };
 
+  // 검색 필터링 로직 (routes가 비어있을 경우 대비)
   const filteredRoutes = (routes || []).filter(
     (route) =>
       route.route_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -73,10 +86,9 @@ export const Home = () => {
 
   return (
     <div className="min-h-screen bg-white">
+      {/* 검색 헤더 */}
       <div className="pt-14 px-6 pb-6 bg-white sticky top-0 z-10 border-b border-gray-50">
-        <h1 className="text-3xl font-extrabold text-gray-900 mb-4">
-          셔틀 버스
-        </h1>
+        <h1 className="text-3xl font-extrabold text-gray-900 mb-4">셔틀 버스</h1>
         <div className="relative">
           <Search className="absolute left-4 top-3.5 text-gray-400" size={20} />
           <input
@@ -96,6 +108,7 @@ export const Home = () => {
           </div>
         ) : (
           <>
+            {/* ⭐ 즐겨찾는 노선 섹션 */}
             {favorites.length > 0 && routes.length > 0 && (
               <div className="mb-6">
                 <div className="px-6 py-3 text-[11px] font-bold text-blue-500 uppercase tracking-widest">
@@ -116,6 +129,7 @@ export const Home = () => {
               </div>
             )}
 
+            {/* 🚌 전체 노선 섹션 */}
             <div className="px-6 py-3 text-[11px] font-bold text-gray-400 uppercase tracking-widest">
               전체 노선
             </div>
