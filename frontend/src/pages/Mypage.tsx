@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { logout } from "../utils/auth";
 import api from "../utils/api"; 
 import { useNavigate } from "react-router-dom";
@@ -13,82 +13,85 @@ export const MyPage = () => {
   const [tempPhone, setTempPhone] = useState("");
   const [loading, setLoading] = useState(true);
 
+  // 중복 요청 방지를 위한 Ref
+  const isFetching = useRef(false);
+
   // [기능 1] 서버로부터 유저 정보 가져오기
   const fetchUserData = useCallback(async () => {
+    // 이미 데이터를 가져오는 중이라면 중복 실행 방지
+    if (isFetching.current) return;
+    
     try {
+      isFetching.current = true;
       setLoading(true);
 
-      // 1. 로컬스토리지에서 로그인된 유저 ID 가져오기
       const user = JSON.parse(localStorage.getItem("user") || "{}");
       const userId = user.user_id || user.id;
 
       if (!userId) {
-        console.error("유저 ID가 없습니다. 로그인이 필요합니다.");
-        setLoading(false);
+        console.error("유저 ID가 없습니다.");
         return;
       }
 
-      // 2. 서버 API 호출 (최신 정보 조회)
+      // 서버 API 호출
       const response = await api.get("/user/status", {
         params: { user_id: userId }
       });
 
       if (response.data) {
         const data = response.data;
-        
-        // 학번 정보 계산 (이메일 기반 혹은 서버 제공 데이터)
         const dynamicStudentId = 
           data.studentId || 
           data.email?.split("@")[0] || 
           user.studentId || 
           "정보 없음";
 
-        // 서버 데이터로 상태 업데이트
         setStudentId(dynamicStudentId);
         setPoints(data.points ?? 0);
         setPhone(data.phone || "연락처 미등록");
         setTempPhone(data.phone || "");
 
-        // 로컬스토리지 최신화 (다음 새로고침 시 초기값으로 사용)
+        // 로컬스토리지 최신화
         localStorage.setItem("user", JSON.stringify({ 
           ...user, 
           ...data, 
           studentId: dynamicStudentId 
         }));
       }
-    } catch (error) {
-      console.error("마이페이지 데이터 동기화 실패:", error);
+    } catch (error: any) {
+      // Aborted 에러는 로그에 찍지 않음 (정상적인 취소 과정일 수 있음)
+      if (error.code !== 'ERR_CANCELED') {
+        console.error("마이페이지 데이터 동기화 실패:", error);
+      }
       
-      // 에러 발생 시 하드코딩된 값이 아닌, 로컬스토리지에 저장된 마지막 정보를 활용
       const user = JSON.parse(localStorage.getItem("user") || "{}");
       setPoints(user.points || 0);
-      setStudentId(user.studentId || user.email?.split("@")[0] || "정보 없음");
       setPhone(user.phone || "연락처 미등록");
-      setTempPhone(user.phone || "");
     } finally {
       setLoading(false);
+      isFetching.current = false;
     }
   }, []);
 
+  // 컴포넌트 마운트 시 한 번만 실행되도록 보장
   useEffect(() => {
     fetchUserData();
   }, [fetchUserData]);
 
   // [기능 2] 연락처 수정
   const handleSavePhone = async () => {
+    if (!tempPhone.trim()) return;
+    
     try {
       const user = JSON.parse(localStorage.getItem("user") || "{}");
       const userId = user.user_id || user.id;
 
-      if (!userId) return;
-
-      // 서버에 저장 요청
       await api.post("/user/update-phone", { 
         user_id: userId,
         phone: tempPhone 
       });
 
-      // 성공 시 UI 업데이트 및 로컬스토리지 동기화
+      // 성공 시 상태 업데이트
       setPhone(tempPhone);
       const updatedUser = { ...user, phone: tempPhone };
       localStorage.setItem("user", JSON.stringify(updatedUser));
@@ -97,48 +100,40 @@ export const MyPage = () => {
       alert("연락처가 성공적으로 서버에 저장되었습니다.");
     } catch (error) {
       console.error("연락처 수정 실패:", error);
-      alert("서버 저장에 실패했습니다. 네트워크 상태를 확인해주세요.");
+      alert("서버 저장에 실패했습니다.");
     }
   };
 
   // [기능 3] 회원 탈퇴
   const handleDeleteAccount = async () => {
-    const confirmDelete = window.confirm(
-      "정말로 탈퇴하시겠습니까?\n탈퇴 시 모든 포인트와 정보가 삭제되며 복구할 수 없습니다."
-    );
+    if (!window.confirm("정말로 탈퇴하시겠습니까?")) return;
+    
+    const password = window.prompt("본인 확인을 위해 비밀번호를 입력해주세요.");
+    if (!password) return;
 
-    if (confirmDelete) {
-      const password = window.prompt("본인 확인을 위해 비밀번호를 입력해주세요.");
-      
-      if (!password) return;
+    try {
+      const user = JSON.parse(localStorage.getItem("user") || "{}");
+      const userId = user.user_id || user.id;
 
-      try {
-        const user = JSON.parse(localStorage.getItem("user") || "{}");
-        const userId = user.user_id || user.id;
+      const response = await api.post("/auth/delete-account", {
+        user_id: userId,
+        password: password
+      });
 
-        const response = await api.post("/auth/delete-account", {
-          user_id: userId,
-          password: password
-        });
-
-        if (response.data.status === "success") {
-          alert("회원 탈퇴가 완료되었습니다. 이용해 주셔서 감사합니다.");
-          localStorage.clear();
-          navigate("/"); 
-        }
-      } catch (error: any) {
-        console.error("탈퇴 실패:", error);
-        alert(error.response?.data?.detail || "비밀번호가 틀렸거나 탈퇴 처리 중 오류가 발생했습니다.");
+      if (response.data.status === "success") {
+        alert("회원 탈퇴가 완료되었습니다.");
+        localStorage.clear();
+        navigate("/"); 
       }
+    } catch (error: any) {
+      alert(error.response?.data?.detail || "비밀번호가 틀렸습니다.");
     }
   };
 
   if (loading) {
     return (
       <div className="min-h-screen bg-[#F2F2F7] flex items-center justify-center">
-        <p className="text-gray-400 font-bold animate-pulse">
-          정보 동기화 중...
-        </p>
+        <p className="text-gray-400 font-bold animate-pulse">정보 동기화 중...</p>
       </div>
     );
   }
@@ -156,9 +151,7 @@ export const MyPage = () => {
 
         <div className="space-y-6">
           <div className="text-center">
-            <p className="text-[#8E8E93] text-[10px] font-bold uppercase tracking-widest mb-1">
-              Student ID
-            </p>
+            <p className="text-[#8E8E93] text-[10px] font-bold uppercase tracking-widest mb-1">Student ID</p>
             <h2 className="text-xl font-black text-gray-900">{studentId}</h2>
           </div>
 
@@ -172,9 +165,7 @@ export const MyPage = () => {
           </div>
 
           <div className="bg-gray-50 rounded-2xl p-4">
-            <p className="text-[#8E8E93] text-[10px] font-bold uppercase tracking-widest mb-2">
-              Contact
-            </p>
+            <p className="text-[#8E8E93] text-[10px] font-bold uppercase tracking-widest mb-2">Contact</p>
             {isEditing ? (
               <div className="flex gap-2">
                 <input
@@ -186,9 +177,7 @@ export const MyPage = () => {
                 <button
                   onClick={handleSavePhone}
                   className="bg-blue-600 text-white px-3 py-2 rounded-lg text-xs font-bold"
-                >
-                  저장
-                </button>
+                >저장</button>
               </div>
             ) : (
               <div className="flex justify-between items-center">
@@ -196,9 +185,7 @@ export const MyPage = () => {
                 <button
                   onClick={() => setIsEditing(true)}
                   className="text-blue-600 text-xs font-bold underline underline-offset-4"
-                >
-                  수정하기
-                </button>
+                >수정하기</button>
               </div>
             )}
           </div>
@@ -206,17 +193,10 @@ export const MyPage = () => {
       </div>
 
       <div className="mt-auto space-y-3 pb-8">
-        <button
-          onClick={logout}
-          className="w-full py-5 bg-white text-gray-400 rounded-[1.5rem] font-bold text-lg transition-all active:bg-gray-100 border border-gray-200"
-        >
+        <button onClick={logout} className="w-full py-5 bg-white text-gray-400 rounded-[1.5rem] font-bold text-lg border border-gray-200">
           로그아웃
         </button>
-        
-        <button
-          onClick={handleDeleteAccount}
-          className="w-full py-4 text-red-400 rounded-[1.5rem] font-medium text-sm transition-all active:text-red-600 opacity-60 hover:opacity-100"
-        >
+        <button onClick={handleDeleteAccount} className="w-full py-4 text-red-400 rounded-[1.5rem] font-medium text-sm opacity-60">
           회원 탈퇴하기
         </button>
       </div>
