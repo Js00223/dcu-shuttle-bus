@@ -29,9 +29,9 @@ app = FastAPI()
 
 # --- [설정: Gmail API 설정] ---
 # 보안을 위해 Render의 Environment Variables(환경 변수)에 등록하는 것을 권장합니다.
-GMAIL_CLIENT_ID = os.getenv("GMAIL_CLIENT_ID", "your_client_id")
-GMAIL_CLIENT_SECRET = os.getenv("GMAIL_CLIENT_SECRET", "your_client_secret")
-GMAIL_REFRESH_TOKEN = os.getenv("GMAIL_REFRESH_TOKEN", "your_refresh_token")
+GMAIL_CLIENT_ID = os.getenv("GMAIL_CLIENT_ID")
+GMAIL_CLIENT_SECRET = os.getenv("GMAIL_CLIENT_SECRET")
+GMAIL_REFRESH_TOKEN = os.getenv("GMAIL_REFRESH_TOKEN")
 
 # --- [데이터 모델 정의] ---
 class ChargeRequest(BaseModel):
