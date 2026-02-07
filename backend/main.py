@@ -396,7 +396,7 @@ const handleReserve = async () => {
       return;
     }
 
-    // ✅ URL 뒤에 붙이지 말고, 두 번째 인자로 데이터를 보냅니다.
+# ✅ URL 뒤에 붙이지 말고, 두 번째 인자로 데이터를 보냅니다.
     const response = await api.post("/bookings/reserve", {
       user_id: userId,
       route_id: Number(routeId) // 현재 페이지의 노선 ID
