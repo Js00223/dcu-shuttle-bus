@@ -2,14 +2,20 @@ import os
 import random
 import datetime
 import logging
-import requests  # smtplib 대신 사용
+import base64
 from typing import List, Optional
+from email.mime.text import MIMEText
 
 from fastapi import FastAPI, Depends, HTTPException, status, Body
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 from pydantic import BaseModel
+
+# Google API 라이브러리
+from google.oauth2.credentials import Credentials
+from googleapiclient.discovery import build
+from google.auth.transport.requests import Request
 
 # 내가 만든 파일들 임포트
 import models
@@ -21,9 +27,11 @@ logger = logging.getLogger(__name__)
 
 app = FastAPI()
 
-# --- [설정: Resend API 설정] ---
-# Render 대시보드 Environment Variables에 RESEND_API_KEY를 등록하거나 아래에 직접 입력하세요.
-RESEND_API_KEY = os.getenv("RESEND_API_KEY", "re_SiDE7afv_GHXDwzTDMHDJTMqaAPZxmKdt")
+# --- [설정: Gmail API 설정] ---
+# 보안을 위해 Render의 Environment Variables(환경 변수)에 등록하는 것을 권장합니다.
+GMAIL_CLIENT_ID = os.getenv("GMAIL_CLIENT_ID", "your_client_id")
+GMAIL_CLIENT_SECRET = os.getenv("GMAIL_CLIENT_SECRET", "your_client_secret")
+GMAIL_REFRESH_TOKEN = os.getenv("GMAIL_REFRESH_TOKEN", "your_refresh_token")
 
 # --- [데이터 모델 정의] ---
 class ChargeRequest(BaseModel):
@@ -45,7 +53,6 @@ class MessageCreate(BaseModel):
     title: str
     content: str
 
-# 탈퇴 요청 모델
 class DeleteAccountRequest(BaseModel):
     user_id: int
     password: str
@@ -56,37 +63,41 @@ bus_realtime_locations = {
     2: {"lat": 35.8530, "lng": 128.7330, "status": "running", "bus_name": "반월당 방면"}
 }
 
-# --- [메일 발송 함수: Resend API 적용] ---
+# --- [메일 발송 함수: Gmail API 적용] ---
 def send_real_email(receiver_email: str, code: str):
     try:
-        # 💡 API 방식은 포트 차단 영향을 받지 않습니다.
-        response = requests.post(
-            "https://api.resend.com/emails",
-            headers={"Authorization": f"Bearer {RESEND_API_KEY}"},
-            json={
-                "from": "onboarding@resend.dev", # Resend 무료 플랜 기본 발신자
-                "to": receiver_email,
-                "subject": "[대구가톨릭대 셔틀] 본인확인 인증번호입니다.",
-                "html": f"""
-                <div style="font-family: sans-serif; padding: 20px;">
-                    <h2>인증번호 안내</h2>
-                    <p>안녕하세요. 본인확인을 위한 인증번호는 아래와 같습니다.</p>
-                    <p style="font-size: 24px; font-weight: bold; color: #007bff;">{code}</p>
-                    <p>앱으로 돌아가 인증을 완료해 주세요.</p>
-                </div>
-                """
-            }
+        # OAuth2 자격 증명 생성
+        creds = Credentials(
+            None,
+            refresh_token=GMAIL_REFRESH_TOKEN,
+            token_uri="https://oauth2.googleapis.com/token",
+            client_id=GMAIL_CLIENT_ID,
+            client_secret=GMAIL_CLIENT_SECRET,
         )
+
+        # 토큰 만료 시 갱신
+        if not creds.valid:
+            creds.refresh(Request())
+
+        # Gmail 서비스 빌드
+        service = build('gmail', 'v1', credentials=creds)
+
+        # 메일 내용 구성
+        message = MIMEText(f"안녕하세요. 대구가톨릭대 셔틀 서비스 본인확인 인증번호는 [{code}] 입니다.")
+        message['to'] = receiver_email
+        message['subject'] = "[대구가톨릭대 셔틀] 인증번호 안내"
+
+        # Base64 인코딩
+        raw_message = base64.urlsafe_b64encode(message.as_bytes()).decode()
         
-        if response.status_code == 200:
-            logger.info(f"✅ 메일 발송 성공: {receiver_email}")
-            return True
-        else:
-            logger.error(f"❌ Resend API 에러: {response.text}")
-            return False
-            
+        # 메일 발송 실행
+        service.users().messages().send(userId="me", body={'raw': raw_message}).execute()
+        
+        logger.info(f"✅ Gmail API 발송 성공: {receiver_email}")
+        return True
+
     except Exception as e:
-        logger.error(f"❌ 메일 발송 중 예외 발생: {e}")
+        logger.error(f"❌ Gmail API 발송 에러: {e}")
         return False
 
 # --- [1. 서버 시작 시 실행 로직] ---
@@ -133,7 +144,6 @@ def send_verification_code(email: str):
     if email_sent:
         return {"message": "인증번호가 발송되었습니다.", "status": "success"}
     else:
-        # API 발송 실패 시에도 가입 테스트가 가능하도록 인증번호를 직접 반환
         logger.warning(f"⚠️ [비상모드] 메일 발송 실패. 대신 인증번호를 반환함: {code}")
         return {
             "message": "메일 서버 연결 불안정으로 인해 테스트 코드가 발송되었습니다.",
