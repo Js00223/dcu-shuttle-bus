@@ -56,6 +56,11 @@ class DeleteAccountRequest(BaseModel):
     user_id: int
     password: str
 
+# 즐겨찾기 요청 모델
+class FavoriteToggleRequest(BaseModel):
+    user_id: int
+    route_id: int
+
 # --- [실시간 데이터 관리] ---
 bus_realtime_locations = {
     1: {"lat": 35.9130, "lng": 128.8030, "status": "running", "bus_name": "하양역 방면"},
@@ -108,7 +113,6 @@ def startup_event():
         logger.error(f"❌ DB 초기화 실패: {e}")
 
 # --- [2. CORS 설정] ---
-# 모든 허용 도메인을 명시하거나 테스트 단계에서 "*"를 사용하여 차단을 방지합니다.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"], 
@@ -183,14 +187,24 @@ def signup(email: str, password: str, name: str, code: str, db: Session = Depend
         db.rollback()
         raise HTTPException(status_code=500, detail="가입 처리 중 오류 발생")
 
-# (4) 로그인
+# (4) 로그인 (즐겨찾기 목록 추가)
 @app.post("/api/auth/login")
 @app.post("/api/api/auth/login")
 def login(email: str, password: str, db: Session = Depends(get_db)):
     user = db.query(models.User).filter(models.User.email == email).first()
     if not user or user.hashed_password != password:
         raise HTTPException(status_code=401, detail="정보가 불일치합니다.")
-    return {"user_id": user.id, "name": user.name, "points": user.points, "status": "success"}
+    
+    # 해당 유저의 즐겨찾기 노선 ID 리스트 가져오기
+    fav_ids = [f.route_id for f in db.query(models.Favorite).filter(models.Favorite.user_id == user.id).all()]
+    
+    return {
+        "user_id": user.id, 
+        "name": user.name, 
+        "points": user.points, 
+        "favorites": fav_ids, # 로그인 시 즐겨찾기 정보 전달
+        "status": "success"
+    }
 
 # (12) 회원 탈퇴
 @app.post("/api/auth/delete-account")
@@ -232,7 +246,7 @@ def get_bus_location(bus_id: int, user_lat: float, user_lng: float):
         "last_update": datetime.datetime.now().isoformat()
     }
 
-# (6) 내 정보 조회
+# (6) 내 정보 조회 (즐겨찾기 포함)
 @app.get("/api/user/status")
 def get_user_status(user_id: int, db: Session = Depends(get_db)):
     try:
@@ -241,12 +255,16 @@ def get_user_status(user_id: int, db: Session = Depends(get_db)):
             logger.warning(f"⚠️ 유저 없음: ID {user_id}")
             raise HTTPException(status_code=404, detail="유저 정보를 찾을 수 없습니다.")
         
+        # 즐겨찾기 목록 조회
+        fav_ids = [f.route_id for f in db.query(models.Favorite).filter(models.Favorite.user_id == user.id).all()]
+        
         return {
             "user_id": user.id,
             "name": getattr(user, "name", "이름 없음"),
             "points": getattr(user, "points", 0),
             "email": getattr(user, "email", ""),
-            "phone": getattr(user, "phone", "정보 없음") 
+            "phone": getattr(user, "phone", "정보 없음"),
+            "favorites": fav_ids # 기기 간 동기화를 위한 필드
         }
     except Exception as e:
         logger.error(f"❌ 마이페이지 조회 중 서버 에러: {e}")
@@ -261,8 +279,8 @@ def charge_points(request: ChargeRequest, db: Session = Depends(get_db)):
     
     try:
         user.points += request.amount
-        db.add(user) # 변경 사항 추적
-        db.commit()   # DB 파일에 영구 저장
+        db.add(user) 
+        db.commit()   
         db.refresh(user)
         logger.info(f"💰 포인트 충전 완료: ID {user.id}, 현재 포인트: {user.points}")
         return {"points": user.points, "status": "success"}
@@ -283,7 +301,7 @@ def update_user_phone(request: PhoneUpdateRequest, db: Session = Depends(get_db)
     try:
         user.phone = request.phone
         db.add(user) 
-        db.commit()  # 실제 DB에 반영
+        db.commit() 
         db.refresh(user) 
         
         logger.info(f"✅ 유저 ID {request.user_id} 저장 완료: {user.phone}")
@@ -296,6 +314,33 @@ def update_user_phone(request: PhoneUpdateRequest, db: Session = Depends(get_db)
         db.rollback()
         logger.error(f"❌ DB 저장 중 오류: {e}")
         raise HTTPException(status_code=500, detail="서버 저장 실패")
+
+# --- [추가: 즐겨찾기 토글 API] ---
+@app.post("/api/user/toggle-favorite")
+def toggle_favorite(request: FavoriteToggleRequest, db: Session = Depends(get_db)):
+    try:
+        # 이미 존재하는지 확인
+        fav = db.query(models.Favorite).filter(
+            models.Favorite.user_id == request.user_id,
+            models.Favorite.route_id == request.route_id
+        ).first()
+
+        if fav:
+            # 있으면 삭제 (언즐겨찾기)
+            db.delete(fav)
+            db.commit()
+            return {"status": "success", "action": "removed", "favorites": [f.route_id for f in db.query(models.Favorite).filter(models.Favorite.user_id == request.user_id).all()]}
+        else:
+            # 없으면 추가
+            new_fav = models.Favorite(user_id=request.user_id, route_id=request.route_id)
+            db.add(new_fav)
+            db.commit()
+            return {"status": "success", "action": "added", "favorites": [f.route_id for f in db.query(models.Favorite).filter(models.Favorite.user_id == request.user_id).all()]}
+            
+    except Exception as e:
+        db.rollback()
+        logger.error(f"❌ 즐겨찾기 처리 에러: {e}")
+        raise HTTPException(status_code=500, detail="즐겨찾기 처리 중 오류 발생")
 
 # (9) 쪽지 목록 조회
 @app.get("/api/messages")
