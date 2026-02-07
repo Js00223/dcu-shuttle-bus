@@ -1,10 +1,11 @@
 from sqlalchemy import Column, Integer, String, ForeignKey, DateTime, Float, Boolean, Text
 from sqlalchemy.orm import relationship
 from datetime import datetime
-from database import Base  # database.py에서 정의된 Base를 사용해야 합니다.
+from database import Base  # ✅ 중요: 여기서 가져온 Base만 사용해야 합니다.
 from sqlalchemy.sql import func
 
-# 유저 정보
+# ❌ Base = declarative_base()  <-- 이 줄이 있다면 반드시 삭제하세요!
+
 class User(Base):
     __tablename__ = "users"
     id = Column(Integer, primary_key=True, index=True)
@@ -14,12 +15,11 @@ class User(Base):
     phone = Column(String, nullable=True)
     points = Column(Integer, default=0)
 
-# 셔틀 노선 정보
 class BusRoute(Base):
     __tablename__ = "bus_routes"
     id = Column(Integer, primary_key=True, index=True)
-    route_name = Column(String)      # 전체 명칭
-    location = Column(String)        # 장소
+    route_name = Column(String)
+    location = Column(String)
     time = Column(String, nullable=True) 
     total_seats = Column(Integer, default=45)
     current_lat = Column(Float, nullable=True)
@@ -27,27 +27,24 @@ class BusRoute(Base):
     last_updated = Column(DateTime, default=datetime.now)
     is_running = Column(Integer, default=0)
 
-# ★ 누락되었던 즐겨찾기 모델 추가 ★
 class Favorite(Base):
     __tablename__ = "favorites"
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"))
     route_id = Column(Integer, ForeignKey("bus_routes.id"))
 
-# 예약 정보
 class Booking(Base):
     __tablename__ = "bookings"
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"))
     route_id = Column(Integer, ForeignKey("bus_routes.id"))
+    status = Column(String, default="reserved")
     seat_number = Column(Integer, nullable=True)
-    status = Column(String, default="reserved") # main.py에서 참조함
     booked_at = Column(DateTime, default=datetime.now)
     
     user = relationship("User")
     route = relationship("BusRoute")
 
-# 학기권 신청
 class SemesterPass(Base):
     __tablename__ = "semester_passes"
     id = Column(Integer, primary_key=True, index=True)
@@ -56,7 +53,6 @@ class SemesterPass(Base):
     status = Column(String, default="pending")
     applied_at = Column(DateTime, default=datetime.now)
 
-# 메시지/알림
 class Message(Base):
     __tablename__ = "messages"
     id = Column(Integer, primary_key=True, index=True)
