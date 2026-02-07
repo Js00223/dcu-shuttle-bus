@@ -32,7 +32,7 @@ GMAIL_CLIENT_ID = os.getenv("GMAIL_CLIENT_ID")
 GMAIL_CLIENT_SECRET = os.getenv("GMAIL_CLIENT_SECRET")
 GMAIL_REFRESH_TOKEN = os.getenv("GMAIL_REFRESH_TOKEN")
 
-# --- [데이터 모델 정의] ---
+# --- [Pydantic 데이터 모델 정의] ---
 class ChargeRequest(BaseModel):
     user_id: int
     amount: int
@@ -60,12 +60,11 @@ class FavoriteToggleRequest(BaseModel):
     user_id: int
     route_id: int
 
-# 예약 요청을 받기 위한 모델 추가
 class ReserveRequest(BaseModel):
     user_id: int
     route_id: int
 
-# --- [실시간 데이터 관리] ---
+# --- [실시간 데이터 관리 (임시)] ---
 bus_realtime_locations = {
     1: {"lat": 35.9130, "lng": 128.8030, "status": "running", "bus_name": "하양역 방면"},
     2: {"lat": 35.8530, "lng": 128.7330, "status": "running", "bus_name": "반월당 방면"}
@@ -111,6 +110,7 @@ def send_real_email(receiver_email: str, code: str):
 def startup_event():
     logger.info("🚀 서버 기동 및 DB 테이블 동기화 중...")
     try:
+        # models.py에 정의된 모든 클래스를 기반으로 테이블 생성
         models.Base.metadata.create_all(bind=engine)
         logger.info("✅ 데이터베이스 모델 동기화 완료")
     except Exception as e:
@@ -199,6 +199,7 @@ def login(email: str, password: str, db: Session = Depends(get_db)):
     if not user or user.hashed_password != password:
         raise HTTPException(status_code=401, detail="정보가 불일치합니다.")
     
+    # Favorite 테이블에서 사용자의 즐겨찾기 ID 목록 가져오기
     fav_ids = [f.route_id for f in db.query(models.Favorite).filter(models.Favorite.user_id == user.id).all()]
     
     return {
@@ -327,7 +328,7 @@ def toggle_favorite(request: FavoriteToggleRequest, db: Session = Depends(get_db
         db.rollback()
         raise HTTPException(status_code=500, detail="즐겨찾기 처리 중 오류 발생")
 
-# (12) 버스 예약 API (백엔드 추가 부분)
+# (12) 버스 예약 API
 @app.post("/api/bookings/reserve")
 def reserve_bus(request: ReserveRequest, db: Session = Depends(get_db)):
     try:
@@ -335,14 +336,14 @@ def reserve_bus(request: ReserveRequest, db: Session = Depends(get_db)):
         if not user:
             raise HTTPException(status_code=404, detail="유저를 찾을 수 없습니다.")
         
-        # 1회 예약 시 500포인트 차감 예시
+        # 1회 예약 시 500포인트 차감
         fare = 500
         if user.points < fare:
             raise HTTPException(status_code=400, detail="포인트가 부족합니다.")
         
         user.points -= fare
         
-        # 예약 내역 저장 (models.Booking 테이블이 정의되어 있어야 함)
+        # 예약 내역 저장
         new_booking = models.Booking(
             user_id=request.user_id,
             route_id=request.route_id,
@@ -357,6 +358,8 @@ def reserve_bus(request: ReserveRequest, db: Session = Depends(get_db)):
             "message": "예약이 완료되었습니다.",
             "remaining_points": user.points
         }
+    except HTTPException as he:
+        raise he
     except Exception as e:
         db.rollback()
         logger.error(f"예약 처리 중 에러: {e}")
