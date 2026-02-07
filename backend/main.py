@@ -254,4 +254,77 @@ def charge_points(request: ChargeRequest, db: Session = Depends(get_db)):
 
 # (10) 전화번호 변경
 @app.post("/api/user/update-phone")
-def update_user_phone(request
+def update_user_phone(request: PhoneUpdateRequest, db: Session = Depends(get_db)):
+    user = db.query(models.User).filter(models.User.id == request.user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="유저 없음")
+    user.phone = request.phone
+    db.commit()
+    return {"message": "연락처 저장됨", "status": "success", "current_phone": user.phone}
+
+# (11) 즐겨찾기 토글
+@app.post("/api/user/toggle-favorite")
+def toggle_favorite(request: FavoriteToggleRequest, db: Session = Depends(get_db)):
+    fav = db.query(models.Favorite).filter(
+        models.Favorite.user_id == request.user_id,
+        models.Favorite.route_id == request.route_id
+    ).first()
+    if fav:
+        db.delete(fav)
+    else:
+        db.add(models.Favorite(user_id=request.user_id, route_id=request.route_id))
+    db.commit()
+    fav_ids = [f.route_id for f in db.query(models.Favorite).filter(models.Favorite.user_id == request.user_id).all()]
+    return {"status": "success", "favorites": fav_ids}
+
+# (12) 버스 예약 API
+@app.post("/api/bookings/reserve")
+def reserve_bus(
+    user_id: Optional[int] = Query(None),
+    route_id: Optional[int] = Query(None),
+    request: ReserveRequest = Body(None),
+    db: Session = Depends(get_db)
+):
+    final_user_id = request.user_id if request and request.user_id else user_id
+    final_route_id = request.route_id if request and request.route_id else route_id
+
+    if not final_user_id or not final_route_id:
+        raise HTTPException(status_code=422, detail="user_id와 route_id가 누락되었습니다.")
+
+    user = db.query(models.User).filter(models.User.id == final_user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="유저를 찾을 수 없습니다.")
+    
+    if user.points < 500:
+        raise HTTPException(status_code=400, detail="포인트가 부족합니다.")
+    
+    user.points -= 500
+    db.add(models.Booking(user_id=final_user_id, route_id=final_route_id, status="reserved"))
+    db.commit()
+    db.refresh(user)
+    return {"status": "success", "message": "예약 완료", "remaining_points": user.points}
+
+# (13) 쪽지 목록 조회
+@app.get("/api/messages")
+def get_messages(user_id: int, db: Session = Depends(get_db)):
+    return db.query(models.Message).filter(models.Message.receiver_id == user_id).order_by(models.Message.created_at.desc()).all()
+
+# (14) 쪽지 상세 조회
+@app.get("/api/messages/{message_id}")
+def get_message_detail(message_id: int, db: Session = Depends(get_db)):
+    msg = db.query(models.Message).filter(models.Message.id == message_id).first()
+    if msg:
+        msg.is_read = 1
+        db.commit()
+    return msg
+
+# (15) 쪽지 보내기
+@app.post("/api/messages/send")
+def send_message(request: MessageCreate, db: Session = Depends(get_db)):
+    new_msg = models.Message(
+        sender_id=request.sender_id, receiver_id=request.receiver_id,
+        title=request.title, content=request.content
+    )
+    db.add(new_msg)
+    db.commit()
+    return {"message": "쪽지 발송 완료", "status": "success"}
