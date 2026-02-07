@@ -4,7 +4,6 @@ from datetime import datetime
 from database import Base  # ✅ 중요: 여기서 가져온 Base만 사용해야 합니다.
 from sqlalchemy.sql import func
 
-# ❌ Base = declarative_base()  <-- 이 줄이 있다면 반드시 삭제하세요!
 
 class User(Base):
     __tablename__ = "users"
