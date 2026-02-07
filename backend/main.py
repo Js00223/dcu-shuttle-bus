@@ -56,12 +56,11 @@ class DeleteAccountRequest(BaseModel):
     user_id: int
     password: str
 
-# 즐겨찾기 요청 모델
 class FavoriteToggleRequest(BaseModel):
     user_id: int
     route_id: int
 
-# 예약 요청 모델 (추가됨)
+# 예약 요청을 받기 위한 모델 추가
 class ReserveRequest(BaseModel):
     user_id: int
     route_id: int
@@ -210,7 +209,7 @@ def login(email: str, password: str, db: Session = Depends(get_db)):
         "status": "success"
     }
 
-# (12) 회원 탈퇴
+# (5) 회원 탈퇴
 @app.post("/api/auth/delete-account")
 @app.post("/api/api/auth/delete-account")
 def delete_account(request: DeleteAccountRequest, db: Session = Depends(get_db)):
@@ -223,17 +222,19 @@ def delete_account(request: DeleteAccountRequest, db: Session = Depends(get_db))
     try:
         db.delete(user)
         db.commit()
+        logger.info(f"👤 유저 탈퇴 성공: ID {request.user_id}")
         return {"message": "회원 탈퇴가 완료되었습니다.", "status": "success"}
     except Exception as e:
         db.rollback()
+        logger.error(f"❌ 탈퇴 처리 중 에러: {e}")
         raise HTTPException(status_code=500, detail="탈퇴 실패")
 
-# 노선조회
+# (6) 노선 조회
 @app.get("/api/routes")
 def get_all_routes(db: Session = Depends(get_db)):
     return db.query(models.BusRoute).all()
 
-# (5) 버스 위치 추적
+# (7) 버스 위치 추적
 @app.get("/api/bus/track/{bus_id}")
 def get_bus_location(bus_id: int, user_lat: float, user_lng: float):
     bus_info = bus_realtime_locations.get(bus_id)
@@ -248,25 +249,29 @@ def get_bus_location(bus_id: int, user_lat: float, user_lng: float):
         "last_update": datetime.datetime.now().isoformat()
     }
 
-# (6) 내 정보 조회
+# (8) 내 정보 조회
 @app.get("/api/user/status")
 def get_user_status(user_id: int, db: Session = Depends(get_db)):
-    user = db.query(models.User).filter(models.User.id == user_id).first()
-    if not user:
-        raise HTTPException(status_code=404, detail="유저 정보를 찾을 수 없습니다.")
-    
-    fav_ids = [f.route_id for f in db.query(models.Favorite).filter(models.Favorite.user_id == user.id).all()]
-    
-    return {
-        "user_id": user.id,
-        "name": getattr(user, "name", "이름 없음"),
-        "points": getattr(user, "points", 0),
-        "email": getattr(user, "email", ""),
-        "phone": getattr(user, "phone", "정보 없음"),
-        "favorites": fav_ids
-    }
+    try:
+        user = db.query(models.User).filter(models.User.id == user_id).first()
+        if not user:
+            raise HTTPException(status_code=404, detail="유저 정보를 찾을 수 없습니다.")
         
-# (7) 포인트 충전
+        fav_ids = [f.route_id for f in db.query(models.Favorite).filter(models.Favorite.user_id == user.id).all()]
+        
+        return {
+            "user_id": user.id,
+            "name": getattr(user, "name", "이름 없음"),
+            "points": getattr(user, "points", 0),
+            "email": getattr(user, "email", ""),
+            "phone": getattr(user, "phone", "정보 없음"),
+            "favorites": fav_ids
+        }
+    except Exception as e:
+        logger.error(f"❌ 마이페이지 조회 중 에러: {e}")
+        raise HTTPException(status_code=500, detail="서버 오류")
+
+# (9) 포인트 충전
 @app.post("/api/charge/request")
 def charge_points(request: ChargeRequest, db: Session = Depends(get_db)):
     user = db.query(models.User).filter(models.User.id == request.user_id).first()
@@ -275,6 +280,7 @@ def charge_points(request: ChargeRequest, db: Session = Depends(get_db)):
     
     try:
         user.points += request.amount
+        db.add(user) 
         db.commit()   
         db.refresh(user)
         return {"points": user.points, "status": "success"}
@@ -282,7 +288,7 @@ def charge_points(request: ChargeRequest, db: Session = Depends(get_db)):
         db.rollback()
         raise HTTPException(status_code=500, detail="충전 중 오류 발생")
 
-# (8) 마이페이지 > 전화번호 변경
+# (10) 전화번호 변경
 @app.post("/api/user/update-phone")
 def update_user_phone(request: PhoneUpdateRequest, db: Session = Depends(get_db)):
     user = db.query(models.User).filter(models.User.id == request.user_id).first()
@@ -291,6 +297,7 @@ def update_user_phone(request: PhoneUpdateRequest, db: Session = Depends(get_db)
     
     try:
         user.phone = request.phone
+        db.add(user) 
         db.commit() 
         db.refresh(user) 
         return {"message": "연락처가 저장되었습니다.", "status": "success", "current_phone": user.phone}
@@ -298,7 +305,7 @@ def update_user_phone(request: PhoneUpdateRequest, db: Session = Depends(get_db)
         db.rollback()
         raise HTTPException(status_code=500, detail="서버 저장 실패")
 
-# (9) 즐겨찾기 토글
+# (11) 즐겨찾기 토글
 @app.post("/api/user/toggle-favorite")
 def toggle_favorite(request: FavoriteToggleRequest, db: Session = Depends(get_db)):
     try:
@@ -309,34 +316,33 @@ def toggle_favorite(request: FavoriteToggleRequest, db: Session = Depends(get_db
 
         if fav:
             db.delete(fav)
-            action = "removed"
         else:
             new_fav = models.Favorite(user_id=request.user_id, route_id=request.route_id)
             db.add(new_fav)
-            action = "added"
         
         db.commit()
-        new_fav_ids = [f.route_id for f in db.query(models.Favorite).filter(models.Favorite.user_id == request.user_id).all()]
-        return {"status": "success", "action": action, "favorites": new_fav_ids}
+        fav_ids = [f.route_id for f in db.query(models.Favorite).filter(models.Favorite.user_id == request.user_id).all()]
+        return {"status": "success", "favorites": fav_ids}
     except Exception as e:
         db.rollback()
-        raise HTTPException(status_code=500, detail="즐겨찾기 처리 실패")
+        raise HTTPException(status_code=500, detail="즐겨찾기 처리 중 오류 발생")
 
-# (10) 버스 예약 API (수정 및 추가된 부분)
+# (12) 버스 예약 API (백엔드 추가 부분)
 @app.post("/api/bookings/reserve")
 def reserve_bus(request: ReserveRequest, db: Session = Depends(get_db)):
-    user = db.query(models.User).filter(models.User.id == request.user_id).first()
-    if not user:
-        raise HTTPException(status_code=404, detail="유저를 찾을 수 없습니다.")
-
-    # 1회 예약 시 500포인트 차감 (예시)
-    fare = 500
-    if user.points < fare:
-        raise HTTPException(status_code=400, detail="포인트가 부족합니다.")
-
     try:
+        user = db.query(models.User).filter(models.User.id == request.user_id).first()
+        if not user:
+            raise HTTPException(status_code=404, detail="유저를 찾을 수 없습니다.")
+        
+        # 1회 예약 시 500포인트 차감 예시
+        fare = 500
+        if user.points < fare:
+            raise HTTPException(status_code=400, detail="포인트가 부족합니다.")
+        
         user.points -= fare
-        # 예약 기록 저장 (models.Booking 테이블이 정의되어 있어야 함)
+        
+        # 예약 내역 저장 (models.Booking 테이블이 정의되어 있어야 함)
         new_booking = models.Booking(
             user_id=request.user_id,
             route_id=request.route_id,
@@ -345,33 +351,34 @@ def reserve_bus(request: ReserveRequest, db: Session = Depends(get_db)):
         db.add(new_booking)
         db.commit()
         db.refresh(user)
+        
         return {
-            "status": "success",
+            "status": "success", 
             "message": "예약이 완료되었습니다.",
             "remaining_points": user.points
         }
     except Exception as e:
         db.rollback()
-        logger.error(f"예약 에러: {e}")
-        raise HTTPException(status_code=500, detail="예약 처리 중 서버 오류")
+        logger.error(f"예약 처리 중 에러: {e}")
+        raise HTTPException(status_code=500, detail="예약 처리 중 오류가 발생했습니다.")
 
-# (11) 쪽지 목록 조회
+# (13) 쪽지 목록 조회
 @app.get("/api/messages")
 def get_messages(user_id: int, db: Session = Depends(get_db)):
     messages = db.query(models.Message).filter(models.Message.receiver_id == user_id).order_by(models.Message.created_at.desc()).all()
     return messages
 
-# (12) 쪽지 상세 조회
+# (14) 쪽지 상세 조회
 @app.get("/api/messages/{message_id}")
 def get_message_detail(message_id: int, db: Session = Depends(get_db)):
     msg = db.query(models.Message).filter(models.Message.id == message_id).first()
     if not msg:
-        raise HTTPException(status_code=404, detail="쪽지 없음")
+        raise HTTPException(status_code=404, detail="쪽지를 찾을 수 없습니다.")
     msg.is_read = 1
     db.commit()
     return msg
 
-# (13) 쪽지 보내기
+# (15) 쪽지 보내기
 @app.post("/api/messages/send")
 def send_message(request: MessageCreate, db: Session = Depends(get_db)):
     try:
@@ -383,7 +390,7 @@ def send_message(request: MessageCreate, db: Session = Depends(get_db)):
         )
         db.add(new_msg)
         db.commit()
-        return {"message": "발송 성공", "status": "success"}
+        return {"message": "쪽지가 발송되었습니다.", "status": "success"}
     except Exception as e:
         db.rollback()
-        raise HTTPException(status_code=500, detail="발송 실패")
+        raise HTTPException(status_code=500, detail="쪽지 발송 실패")
