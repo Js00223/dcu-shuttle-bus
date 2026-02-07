@@ -386,3 +386,31 @@ def send_message(request: MessageCreate, db: Session = Depends(get_db)):
         db.rollback()
         logger.error(f"쪽지 발송 에러: {e}")
         raise HTTPException(status_code=500, detail="쪽지 발송 실패")
+const handleReserve = async () => {
+  try {
+    const user = JSON.parse(localStorage.getItem("user") || "{}");
+    const userId = user.user_id || user.id;
+
+    if (!userId) {
+      alert("로그인이 필요합니다.");
+      return;
+    }
+
+    // ✅ URL 뒤에 붙이지 말고, 두 번째 인자로 데이터를 보냅니다.
+    const response = await api.post("/bookings/reserve", {
+      user_id: userId,
+      route_id: Number(routeId) // 현재 페이지의 노선 ID
+    });
+
+    if (response.data.status === "success") {
+      alert(`예약 완료! 잔액: ${response.data.remaining_points}P`);
+      // 마이페이지 동기화를 위해 로컬스토리지 포인트 업데이트
+      const updatedUser = { ...user, points: response.data.remaining_points };
+      localStorage.setItem("user", JSON.stringify(updatedUser));
+      navigate("/mypage");
+    }
+  } catch (error: any) {
+    console.error("예약 오류:", error);
+    alert(error.response?.data?.detail || "예약에 실패했습니다.");
+  }
+};
