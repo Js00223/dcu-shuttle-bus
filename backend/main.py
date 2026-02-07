@@ -108,11 +108,13 @@ def send_real_email(receiver_email: str, code: str):
 # --- [1. 서버 시작 시 실행 로직] ---
 @app.on_event("startup")
 def startup_event():
-    logger.info("🚀 서버 기동 및 DB 테이블 동기화 중...")
+    logger.info("🚀 서버 기동 및 DB 테이블 동기화 시작...")
     try:
-        # models.py에 정의된 모든 클래스를 기반으로 테이블 생성
+        # 🔥 중요: phone 컬럼 누락 문제를 해결하기 위해 테이블을 드랍 후 재생성합니다.
+        # 한번 성공적으로 배포된 후에는 아래 drop_all 라인을 지우거나 주석 처리하세요.
+        models.Base.metadata.drop_all(bind=engine) 
         models.Base.metadata.create_all(bind=engine)
-        logger.info("✅ 데이터베이스 모델 동기화 완료")
+        logger.info("✅ 데이터베이스 모델 동기화 및 테이블 재생성 완료")
     except Exception as e:
         logger.error(f"❌ DB 초기화 실패: {e}")
 
@@ -199,7 +201,6 @@ def login(email: str, password: str, db: Session = Depends(get_db)):
     if not user or user.hashed_password != password:
         raise HTTPException(status_code=401, detail="정보가 불일치합니다.")
     
-    # Favorite 테이블에서 사용자의 즐겨찾기 ID 목록 가져오기
     fav_ids = [f.route_id for f in db.query(models.Favorite).filter(models.Favorite.user_id == user.id).all()]
     
     return {
@@ -336,14 +337,12 @@ def reserve_bus(request: ReserveRequest, db: Session = Depends(get_db)):
         if not user:
             raise HTTPException(status_code=404, detail="유저를 찾을 수 없습니다.")
         
-        # 1회 예약 시 500포인트 차감
         fare = 500
         if user.points < fare:
             raise HTTPException(status_code=400, detail="포인트가 부족합니다.")
         
         user.points -= fare
         
-        # 예약 내역 저장
         new_booking = models.Booking(
             user_id=request.user_id,
             route_id=request.route_id,
