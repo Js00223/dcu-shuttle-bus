@@ -101,22 +101,19 @@ def send_real_email(receiver_email: str, code: str):
         logger.error(f"❌ Gmail API 발송 에러: {e}")
         return False
 
-# --- [1. 서버 시작 시 실행 로직: 노선 자동 복구] ---
+# --- [1. 서버 시작 시 실행 로직] ---
 @app.on_event("startup")
 def startup_event():
     logger.info("🚀 서버 기동 및 데이터 확인 중...")
     try:
-        # 테이블 생성 (drop_all은 이제 하지 않습니다 - 데이터 보존)
         models.Base.metadata.create_all(bind=engine)
-        
-        # 노선 데이터가 없으면 자동으로 채워줍니다.
         db = next(get_db())
         if db.query(models.BusRoute).count() == 0:
-            logger.info("🚚 노선 데이터가 비어있어 기본 데이터를 생성합니다.")
+            logger.info("🚚 노선 데이터 생성 중...")
             routes = [
-                models.BusRoute(route_name="하양역 방면", location="정문 승강장", time="08:30", total_seats=45),
-                models.BusRoute(route_name="반월당 방면", location="공대 앞", time="09:00", total_seats=45),
-                models.BusRoute(route_name="안심역 방면", location="본관 앞", time="08:45", total_seats=45)
+                models.BusRoute(id=1, route_name="하양역 방면", location="정문 승강장", time="08:30", total_seats=45),
+                models.BusRoute(id=2, route_name="반월당 방면", location="공대 앞", time="09:00", total_seats=45),
+                models.BusRoute(id=3, route_name="안심역 방면", location="본관 앞", time="08:45", total_seats=45)
             ]
             db.add_all(routes)
             db.commit()
@@ -142,19 +139,16 @@ verification_codes = {}
 def read_root():
     return {"status": "running", "message": "DCU Shuttle API Server"}
 
-# (1) 인증번호 발송
 @app.post("/api/auth/send-code")
 def send_verification_code(email: str):
     if not email.endswith("@cu.ac.kr"):
         raise HTTPException(status_code=400, detail="대구가톨릭대 메일만 가능합니다.")
     code = str(random.randint(100000, 999999))
     verification_codes[email] = code
-    email_sent = send_real_email(email, code)
-    if email_sent:
-        return {"message": "인증번호가 발송되었습니다.", "status": "success"}
+    if send_real_email(email, code):
+        return {"message": "인증번호 발송 완료", "status": "success"}
     return {"message": "테스트 모드", "test_code": code, "status": "success"}
 
-# (2) 비밀번호 재설정 (중복 경로 /api/api/... 대응)
 @app.post("/api/auth/reset-password")
 @app.post("/api/api/auth/reset-password")
 def reset_password(request: ResetPasswordRequest, db: Session = Depends(get_db)):
@@ -166,7 +160,6 @@ def reset_password(request: ResetPasswordRequest, db: Session = Depends(get_db))
     db.commit()
     return {"message": "비밀번호 변경 완료", "status": "success"}
 
-# (3) 회원가입
 @app.post("/api/auth/signup")
 @app.post("/api/api/auth/signup")
 def signup(email: str, password: str, name: str, code: str, db: Session = Depends(get_db)):
@@ -179,57 +172,81 @@ def signup(email: str, password: str, name: str, code: str, db: Session = Depend
     db.commit()
     return {"message": "가입 완료", "status": "success"}
 
-# (4) 로그인
 @app.post("/api/auth/login")
 @app.post("/api/api/auth/login")
 def login(email: str, password: str, db: Session = Depends(get_db)):
     user = db.query(models.User).filter(models.User.email == email).first()
     if not user or user.hashed_password != password:
-        raise HTTPException(status_code=401, detail="아이디 또는 비밀번호 틀림")
-    fav_ids = [f.route_id for f in db.query(models.Favorite).filter(models.Favorite.user_id == user.id).all()]
-    return {"user_id": user.id, "name": user.name, "points": user.points, "favorites": fav_ids, "status": "success"}
-
-# (5) 회원 탈퇴
-@app.post("/api/auth/delete-account")
-@app.post("/api/api/auth/delete-account")
-def delete_account(request: DeleteAccountRequest, db: Session = Depends(get_db)):
-    user = db.query(models.User).filter(models.User.id == request.user_id).first()
-    if not user or user.hashed_password != request.password:
         raise HTTPException(status_code=401, detail="인증 실패")
-    db.delete(user)
-    db.commit()
-    return {"message": "탈퇴 완료", "status": "success"}
+    
+    # 🌟 즐겨찾기 목록 동기화
+    fav_ids = [f.route_id for f in db.query(models.Favorite).filter(models.Favorite.user_id == user.id).all()]
+    
+    return {
+        "user_id": user.id, 
+        "name": user.name, 
+        "points": user.points, 
+        "favorites": fav_ids, # 최신 즐겨찾기 반환
+        "status": "success"
+    }
 
-# (6) 노선 조회
 @app.get("/api/routes")
 def get_all_routes(db: Session = Depends(get_db)):
     return db.query(models.BusRoute).all()
 
-# (7) 버스 위치 추적
-@app.get("/api/bus/track/{bus_id}")
-def get_bus_location(bus_id: int, user_lat: float, user_lng: float):
-    bus_info = bus_realtime_locations.get(bus_id)
-    if not bus_info: raise HTTPException(status_code=404)
-    return {**bus_info, "bus_id": bus_id, "last_update": datetime.datetime.now().isoformat()}
-
-# (8) 내 정보 조회
 @app.get("/api/user/status")
 def get_user_status(user_id: int, db: Session = Depends(get_db)):
     user = db.query(models.User).filter(models.User.id == user_id).first()
     if not user: raise HTTPException(status_code=404)
+    
+    # 🌟 최신 즐겨찾기 목록 다시 가져오기
     fav_ids = [f.route_id for f in db.query(models.Favorite).filter(models.Favorite.user_id == user.id).all()]
-    return {"user_id": user.id, "name": user.name, "points": user.points, "email": user.email, "phone": getattr(user, "phone", "미등록"), "favorites": fav_ids}
+    
+    return {
+        "user_id": user.id,
+        "name": user.name,
+        "points": user.points,
+        "email": user.email,
+        "phone": getattr(user, "phone", "미등록"),
+        "favorites": fav_ids
+    }
 
-# (9) 포인트 충전
+@app.post("/api/user/toggle-favorite")
+def toggle_favorite(request: FavoriteToggleRequest, db: Session = Depends(get_db)):
+    try:
+        # 이미 즐겨찾기 되어있는지 확인
+        fav = db.query(models.Favorite).filter(
+            models.Favorite.user_id == request.user_id,
+            models.Favorite.route_id == request.route_id
+        ).first()
+
+        if fav:
+            db.delete(fav)
+            logger.info(f"⭐ 즐겨찾기 해제: User {request.user_id}, Route {request.route_id}")
+        else:
+            new_fav = models.Favorite(user_id=request.user_id, route_id=request.route_id)
+            db.add(new_fav)
+            logger.info(f"⭐ 즐겨찾기 추가: User {request.user_id}, Route {request.route_id}")
+        
+        db.commit()
+        
+        # 🌟 변경 후의 전체 즐겨찾기 목록을 다시 조회해서 반환
+        updated_favs = [f.route_id for f in db.query(models.Favorite).filter(models.Favorite.user_id == request.user_id).all()]
+        return {"status": "success", "favorites": updated_favs}
+    except Exception as e:
+        db.rollback()
+        logger.error(f"❌ 즐겨찾기 토글 실패: {e}")
+        raise HTTPException(status_code=500, detail="즐겨찾기 처리 중 오류")
+
 @app.post("/api/charge/request")
 def charge_points(request: ChargeRequest, db: Session = Depends(get_db)):
     user = db.query(models.User).filter(models.User.id == request.user_id).first()
     if not user: raise HTTPException(status_code=404)
     user.points += request.amount
     db.commit()
+    db.refresh(user)
     return {"points": user.points, "status": "success"}
 
-# (10) 전화번호 변경
 @app.post("/api/user/update-phone")
 def update_user_phone(request: PhoneUpdateRequest, db: Session = Depends(get_db)):
     user = db.query(models.User).filter(models.User.id == request.user_id).first()
@@ -238,17 +255,6 @@ def update_user_phone(request: PhoneUpdateRequest, db: Session = Depends(get_db)
     db.commit()
     return {"status": "success", "current_phone": user.phone}
 
-# (11) 즐겨찾기 토글
-@app.post("/api/user/toggle-favorite")
-def toggle_favorite(request: FavoriteToggleRequest, db: Session = Depends(get_db)):
-    fav = db.query(models.Favorite).filter(models.Favorite.user_id == request.user_id, models.Favorite.route_id == request.route_id).first()
-    if fav: db.delete(fav)
-    else: db.add(models.Favorite(user_id=request.user_id, route_id=request.route_id))
-    db.commit()
-    fav_ids = [f.route_id for f in db.query(models.Favorite).filter(models.Favorite.user_id == request.user_id).all()]
-    return {"status": "success", "favorites": fav_ids}
-
-# (12) 예약
 @app.post("/api/bookings/reserve")
 def reserve_bus(request: ReserveRequest, db: Session = Depends(get_db)):
     user = db.query(models.User).filter(models.User.id == request.user_id).first()
@@ -258,7 +264,6 @@ def reserve_bus(request: ReserveRequest, db: Session = Depends(get_db)):
     db.commit()
     return {"status": "success", "remaining_points": user.points}
 
-# (13~15) 쪽지 기능
 @app.get("/api/messages")
 def get_messages(user_id: int, db: Session = Depends(get_db)):
     return db.query(models.Message).filter(models.Message.receiver_id == user_id).all()
@@ -276,3 +281,19 @@ def send_message(request: MessageCreate, db: Session = Depends(get_db)):
     db.add(models.Message(sender_id=request.sender_id, receiver_id=request.receiver_id, title=request.title, content=request.content))
     db.commit()
     return {"status": "success"}
+
+@app.post("/api/auth/delete-account")
+@app.post("/api/api/auth/delete-account")
+def delete_account(request: DeleteAccountRequest, db: Session = Depends(get_db)):
+    user = db.query(models.User).filter(models.User.id == request.user_id).first()
+    if not user or user.hashed_password != request.password:
+        raise HTTPException(status_code=401, detail="인증 실패")
+    db.delete(user)
+    db.commit()
+    return {"message": "탈퇴 완료", "status": "success"}
+
+@app.get("/api/bus/track/{bus_id}")
+def get_bus_location(bus_id: int, user_lat: float, user_lng: float):
+    bus_info = bus_realtime_locations.get(bus_id)
+    if not bus_info: raise HTTPException(status_code=404)
+    return {**bus_info, "bus_id": bus_id, "last_update": datetime.datetime.now().isoformat()}
