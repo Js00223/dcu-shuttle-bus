@@ -24,34 +24,47 @@ export const MyPage = () => {
 
       if (!userId) {
         console.error("유저 ID가 없습니다. 로그인이 필요합니다.");
+        setLoading(false);
         return;
       }
 
-      // 2. api 인스턴스 사용
+      // 2. 서버 API 호출 (최신 정보 조회)
       const response = await api.get("/user/status", {
         params: { user_id: userId }
       });
 
       if (response.data) {
+        const data = response.data;
+        
+        // 학번 정보 계산 (이메일 기반 혹은 서버 제공 데이터)
         const dynamicStudentId = 
-          response.data.studentId || 
-          response.data.email?.split("@")[0] || 
+          data.studentId || 
+          data.email?.split("@")[0] || 
           user.studentId || 
-          "학번 정보 없음";
+          "정보 없음";
 
+        // 서버 데이터로 상태 업데이트
         setStudentId(dynamicStudentId);
-        setPoints(response.data.points ?? 0);
-        setPhone(response.data.phone || "010-0000-0000");
-        setTempPhone(response.data.phone || "010-0000-0000");
+        setPoints(data.points ?? 0);
+        setPhone(data.phone || "연락처 미등록");
+        setTempPhone(data.phone || "");
 
-        localStorage.setItem("user", JSON.stringify({ ...response.data, studentId: dynamicStudentId }));
+        // 로컬스토리지 최신화 (다음 새로고침 시 초기값으로 사용)
+        localStorage.setItem("user", JSON.stringify({ 
+          ...user, 
+          ...data, 
+          studentId: dynamicStudentId 
+        }));
       }
     } catch (error) {
       console.error("마이페이지 데이터 동기화 실패:", error);
+      
+      // 에러 발생 시 하드코딩된 값이 아닌, 로컬스토리지에 저장된 마지막 정보를 활용
       const user = JSON.parse(localStorage.getItem("user") || "{}");
       setPoints(user.points || 0);
-      setStudentId(user.studentId || user.email?.split("@")[0] || "20231234");
-      setPhone(user.phone || "010-1234-5678");
+      setStudentId(user.studentId || user.email?.split("@")[0] || "정보 없음");
+      setPhone(user.phone || "연락처 미등록");
+      setTempPhone(user.phone || "");
     } finally {
       setLoading(false);
     }
@@ -67,20 +80,24 @@ export const MyPage = () => {
       const user = JSON.parse(localStorage.getItem("user") || "{}");
       const userId = user.user_id || user.id;
 
+      if (!userId) return;
+
+      // 서버에 저장 요청
       await api.post("/user/update-phone", { 
         user_id: userId,
         phone: tempPhone 
       });
 
+      // 성공 시 UI 업데이트 및 로컬스토리지 동기화
       setPhone(tempPhone);
       const updatedUser = { ...user, phone: tempPhone };
       localStorage.setItem("user", JSON.stringify(updatedUser));
       
       setIsEditing(false);
-      alert("연락처가 서버에 저장되었습니다.");
+      alert("연락처가 성공적으로 서버에 저장되었습니다.");
     } catch (error) {
       console.error("연락처 수정 실패:", error);
-      alert("수정사항을 서버에 저장하지 못했습니다.");
+      alert("서버 저장에 실패했습니다. 네트워크 상태를 확인해주세요.");
     }
   };
 
@@ -107,7 +124,7 @@ export const MyPage = () => {
         if (response.data.status === "success") {
           alert("회원 탈퇴가 완료되었습니다. 이용해 주셔서 감사합니다.");
           localStorage.clear();
-          navigate("/"); // 메인 또는 로그인 페이지로 이동
+          navigate("/"); 
         }
       } catch (error: any) {
         console.error("탈퇴 실패:", error);
