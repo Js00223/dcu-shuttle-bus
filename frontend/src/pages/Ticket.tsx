@@ -1,6 +1,5 @@
 import { useEffect, useState, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { useNFC } from "../hooks/useNFC";
 import api from "../utils/api"; 
 
 interface BusRoute {
@@ -11,45 +10,54 @@ interface BusRoute {
 }
 
 export const Ticket = () => {
-  const { id } = useParams();
+  const { id } = useParams(); // URL에서 노선 ID 추출
   const navigate = useNavigate();
 
   const [loading, setLoading] = useState(true);
   const [routeInfo, setRouteInfo] = useState<BusRoute | null>(null);
-  const [isScanned, setIsScanned] = useState(false);
-  const [isFree, setIsFree] = useState(false); 
+  const [isScanned, setIsScanned] = useState(false); // 탑승 확인 여부
+  const [isFree, setIsFree] = useState(false);      // 무료 노선 여부
+  const [hasNFC, setHasNFC] = useState(true);       // 기기 NFC 지원 여부
 
-  const { startScanning } = useNFC();
-
-  // 🌟 [수정] 선언만 되어있던 함수를 NFC 스캔 로직 등에 연결하거나 활용할 수 있도록 유지
-  const handleScanSuccess = useCallback(() => {
-    setIsScanned(true);
-    alert("인증되었습니다. 탑승해 주세요!");
+  // 1. 수동 탑승 확인 처리 (NFC가 없거나 태그가 안 될 때)
+  const handleManualVerify = useCallback(() => {
+    if (window.confirm("기사님 확인을 받으셨나요? 확인 버튼을 누르면 탑승 처리가 됩니다.")) {
+      setIsScanned(true);
+      alert("탑승 확인되었습니다. 즐거운 통학 되세요!");
+    }
   }, []);
 
-  // 🌟 [수정] 미사용 변수 에러 해결을 위해 체크 로직 최적화
+  // 2. NFC 스캔 전용 페이지로 이동
+  const goToNFCScanPage = () => {
+    // 현재 노선 ID를 파라미터로 들고 이동합니다.
+    navigate(`/nfc-scan/${id}`);
+  };
+
+  // 3. 무료 노선 키워드 체크 (프론트엔드 UI용)
   const checkIsFreeRoute = (routeName: string) => {
-    const freeKeywords = ["대구", "하양", "교내", "셔틀", "순환"];
-    // paidKeywords는 참고용으로 주석 처리하거나 삭제하여 에러 방지
+    const freeKeywords = ["대구", "하양", "교내", "셔틀", "순환", "등교", "하교"];
     return freeKeywords.some(keyword => routeName.includes(keyword));
   };
 
   useEffect(() => {
+    // 🌟 브라우저/기기 NFC 지원 여부 초기 체크
+    if (!("NDEFReader" in window)) {
+      setHasNFC(false);
+    }
+
     const processReservation = async () => {
       const rawUserId = localStorage.getItem("user_id");
-      
       if (!rawUserId) {
-        alert("로그인 정보가 없습니다. 다시 로그인해 주세요.");
+        alert("로그인 정보가 없습니다.");
         navigate("/login");
         return;
       }
 
       try {
         setLoading(true);
-
+        // 전체 노선 정보를 가져와 현재 티켓에 맞는 정보 찾기
         const routeRes = await api.get("/routes");
-        const routes: BusRoute[] = routeRes.data;
-        const currentRoute = routes.find((r) => r.id === Number(id));
+        const currentRoute = routeRes.data.find((r: BusRoute) => r.id === Number(id));
 
         if (!currentRoute) {
           alert("노선 정보를 찾을 수 없습니다.");
@@ -58,120 +66,119 @@ export const Ticket = () => {
         }
 
         setRouteInfo(currentRoute);
-        
-        const freeStatus = checkIsFreeRoute(currentRoute.route_name);
-        setIsFree(freeStatus);
+        setIsFree(checkIsFreeRoute(currentRoute.route_name));
 
+        // 백엔드에 예약 요청 (여기서 포인트가 차감되거나 무료 처리됨)
         const response = await api.post("/bookings/reserve", null, {
           params: { 
-            user_id: parseInt(rawUserId),
-            route_id: id,
-            is_free: freeStatus 
+            user_id: parseInt(rawUserId), 
+            route_id: id 
           }
         });
 
-        if (response.status === 200 || response.data.status === "success") {
+        if (response.status === 200) {
           setLoading(false);
-
-          const confirmMsg = freeStatus 
-            ? `[무료 노선] 예매가 완료되었습니다.\n태그 준비를 해주세요.` 
-            : `[시외 노선] 3,000P가 차감되었습니다.\n태그 준비를 해주세요.`;
-
-          if (window.confirm(confirmMsg)) {
-            // 실제 스캔 시 handleScanSuccess가 실행되도록 연결되는 구조여야 함
-            startScanning();
-          }
         }
       } catch (error: any) {
-        console.error("예약 오류:", error);
-        const errorMsg = error.response?.data?.detail || "예약 시스템 오류";
-        alert(`실패: ${errorMsg}`);
-        
-        if (errorMsg.includes("포인트")) navigate("/points");
-        else navigate("/");
+        // 포인트 부족 등 에러 처리
+        alert(error.response?.data?.detail || "예약 시스템 오류");
+        navigate("/");
       }
     };
 
     if (id) processReservation();
-  }, [id, navigate, startScanning]);
+  }, [id, navigate]);
 
-  const handleCancel = async () => {
-    const rawUserId = localStorage.getItem("user_id");
-    if (window.confirm(isFree ? "예약을 취소하시겠습니까?" : "예약을 취소하시겠습니까? 3,000P가 환불됩니다.")) {
-      try {
-        await api.post("/bookings/cancel", null, {
-            params: { user_id: rawUserId, route_id: id }
-        });
-        alert("취소되었습니다.");
-        navigate("/");
-      } catch (err) {
-        alert("취소 처리 중 오류가 발생했습니다.");
-      }
-    }
-  };
-
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-blue-600 flex items-center justify-center">
-        <div className="text-white font-bold animate-pulse text-lg text-center">
-          노선 확인 및 티켓 발권 중...<br/>
-          <span className="text-sm font-normal opacity-70">(시외 노선은 3,000P가 차감됩니다)</span>
-        </div>
-      </div>
-    );
-  }
+  if (loading) return (
+    <div className="min-h-screen bg-blue-600 flex items-center justify-center text-white font-bold">
+      승차권을 준비 중입니다...
+    </div>
+  );
 
   return (
-    <div className={`min-h-screen ${isScanned ? "bg-green-500" : "bg-blue-600"} p-6 flex flex-col items-center justify-center transition-colors`}>
+    <div className={`min-h-screen ${isScanned ? "bg-green-500" : "bg-blue-600"} p-6 flex flex-col items-center justify-center transition-colors font-sans`}>
+      {/* 티켓 카드 디자인 */}
       <div className="bg-white w-full max-w-sm rounded-[2.5rem] overflow-hidden shadow-2xl">
+        
+        {/* 상단 정보 영역 */}
         <div className="p-8 text-center border-b-2 border-dashed border-gray-100 relative">
-          <div className="text-blue-600 font-bold mb-2 tracking-widest text-xs">
-            {isFree ? "FREE PASS" : "PREMIUM PASS"}
+          <div className="text-blue-600 font-bold mb-2 tracking-widest text-[10px] uppercase">
+            {isFree ? "University Free Shuttle" : "City-to-Campus Express"}
           </div>
-          <h2 className="text-3xl font-black text-gray-900">{routeInfo?.route_name}</h2>
-          <p className="text-gray-400 mt-1">{isFree ? "교내/대구권 무료 노선" : "시외권 유료 노선"}</p>
+          <h2 className="text-2xl font-black text-gray-900 leading-tight">
+            {routeInfo?.route_name}
+          </h2>
+          <p className="text-gray-400 mt-2 text-sm">
+            {routeInfo?.time} 정시에 출발합니다
+          </p>
+          
+          {/* 티켓 사이드 홈 (디자인 요소) */}
+          <div className="absolute -bottom-3 -left-3 w-6 h-6 bg-blue-600 rounded-full"></div>
+          <div className="absolute -bottom-3 -right-3 w-6 h-6 bg-blue-600 rounded-full"></div>
         </div>
 
+        {/* 하단 상세 영역 */}
         <div className="p-8">
-          <div className="flex justify-between mb-6">
+          <div className="flex justify-between mb-8">
             <div>
-              <p className="text-[10px] text-gray-400 uppercase font-bold mb-1">요금</p>
-              <p className="text-lg font-bold text-blue-600">{isFree ? "무료" : "3,000P"}</p>
-            </div>
-            <div className="text-right">
-              <p className="text-[10px] text-gray-400 uppercase font-bold mb-1">상태</p>
+              <p className="text-[10px] text-gray-400 uppercase font-bold mb-1">Status</p>
               <p className={`text-lg font-bold ${isScanned ? "text-green-500" : "text-blue-600"}`}>
                 {isScanned ? "탑승 완료" : "사용 가능"}
               </p>
             </div>
+            <div className="text-right">
+              <p className="text-[10px] text-gray-400 uppercase font-bold mb-1">Fare</p>
+              <p className="text-lg font-bold text-gray-900">{isFree ? "무료" : "3,000P"}</p>
+            </div>
           </div>
 
-          <div className={`${isScanned ? "bg-green-50" : "bg-gray-50"} rounded-2xl p-5 flex flex-col items-center gap-3`}>
-            <div className={`w-full h-12 bg-white rounded-xl border flex items-center justify-center`}>
-              <span className={`text-xs font-bold ${isScanned ? "text-green-500" : "text-gray-400"} tracking-[0.5em]`}>
-                {isScanned ? "VERIFIED" : "WAITING..."}
-              </span>
+          {!isScanned && (
+            <div className="flex flex-col gap-3">
+              {/* NFC 기능이 있을 때만 스캔 페이지 이동 버튼 노출 */}
+              {hasNFC ? (
+                <button 
+                  onClick={goToNFCScanPage}
+                  className="w-full py-4 bg-blue-600 text-white rounded-2xl font-bold shadow-lg active:scale-95 transition-transform"
+                >
+                  NFC 태그하여 승차 확인
+                </button>
+              ) : (
+                <div className="bg-orange-50 p-4 rounded-xl text-orange-700 text-[11px] mb-2 leading-tight">
+                  이 기기는 NFC 기능을 지원하지 않거나 비활성화되어 있습니다. 
+                  기사님 확인 후 아래 버튼을 사용해 주세요.
+                </div>
+              )}
+              
+              {/* 수동 확인 버튼 (NFC가 없으면 더 강조됨) */}
+              <button 
+                onClick={handleManualVerify}
+                className={`w-full py-4 border-2 ${hasNFC ? "border-gray-100 text-gray-400" : "border-blue-600 text-blue-600"} rounded-2xl font-bold active:scale-95 transition-transform`}
+              >
+                기사님 수동 확인
+              </button>
             </div>
-            <p className="text-[11px] text-gray-400 text-center">
-              {isScanned ? "인증 완료! 즐거운 통학 되세요." : "휴대폰을 버스 단말기에 태그해주세요."}
-            </p>
-          </div>
+          )}
+
+          {/* 승차 확인 완료 UI */}
+          {isScanned && (
+            <div className="bg-green-50 rounded-2xl p-6 flex flex-col items-center gap-2 border-2 border-green-100 animate-pulse">
+              <div className="w-12 h-12 bg-green-500 rounded-full flex items-center justify-center mb-2">
+                <svg className="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7" />
+                </svg>
+              </div>
+              <span className="text-green-600 font-black text-xl">승차 확인 완료</span>
+              <p className="text-xs text-green-700 font-medium">안전하고 편안한 이동 되세요!</p>
+            </div>
+          )}
         </div>
       </div>
-
+      
       {!isScanned && (
-        <button onClick={handleCancel} className="mt-8 text-white/60 font-medium underline">
-          예약 취소 {!isFree && "(3,000P 환불)"}
+        <button onClick={() => navigate("/")} className="mt-8 text-white/60 font-medium underline text-sm">
+          예약 취소 및 메인으로
         </button>
       )}
-
-      {/* 테스트용 버튼: 빌드 에러 방지를 위해 handleScanSuccess를 여기서 사용 */}
-      <button
-        onClick={handleScanSuccess}
-        className="mt-4 text-[10px] text-white/20 hover:text-white/40 transition-colors"
-      >
-        (개발자용) 스캔 성공 시뮬레이션
-      </button>
     </div>
   );
 };
