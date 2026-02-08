@@ -1,6 +1,7 @@
 import re
 from database import SessionLocal, engine
 import models
+from sqlalchemy import text
 
 # 데이터베이스 테이블 생성
 models.Base.metadata.create_all(bind=engine)
@@ -43,29 +44,41 @@ shuttle_data_raw = [
 def seed_shuttle_data():
     db = SessionLocal()
     try:
-        # 기존 데이터 초기화 (중복 방지)
-        db.query(models.BusRoute).delete()
+        print("🔄 노선 데이터 동기화를 시작합니다 (Upsert 방식)...")
+        
+        # 1. 현재 DB에 있는 모든 노선을 이름을 키로 가져옴
+        existing_routes = {r.route_name: r for r in db.query(models.BusRoute).all()}
+        
+        count_added = 0
+        count_updated = 0
         
         for item in shuttle_data_raw:
-            # 1. 시간 추출: (00:00) 형태 찾기
+            # 시간 및 장소 추출 로직
             time_match = re.search(r"\((\d{2}:\d{2})\)", item)
             extracted_time = time_match.group(1) if time_match else None
-            
-            # 2. 장소명 추출: 괄호 부분 및 특수기호 제거
-            # 예: "하양(대구가톨릭대)역건너(08:20)" -> "하양(대구가톨릭대)역건너"
             location_name = re.sub(r"\(\d{2}:\d{2}\)", "", item).strip()
             
-            # 3. 데이터 객체 생성
-            route = models.BusRoute(
-                route_name=item,        # 원본 전체 이름
-                location=location_name,  # 가공된 장소명
-                time=extracted_time,    # 추출된 시간 (없으면 None)
-                total_seats=45          # 기본 좌석 수
-            )
-            db.add(route)
+            if item in existing_routes:
+                # 🌟 [Update] 이미 있는 노선이면 정보만 업데이트 (ID 유지)
+                route = existing_routes[item]
+                route.location = location_name
+                route.time = extracted_time
+                route.total_seats = 45
+                count_updated += 1
+            else:
+                # 🌟 [Insert] 없는 노선이면 새로 추가
+                new_route = models.BusRoute(
+                    route_name=item,
+                    location=location_name,
+                    time=extracted_time,
+                    total_seats=45
+                )
+                db.add(new_route)
+                count_added += 1
         
         db.commit()
-        print(f"✅ 성공: 총 {len(shuttle_data_raw)}개의 셔틀 노선 데이터가 DB(shuttle.db)에 저장되었습니다.")
+        print(f"✅ 동기화 완료: 업데이트 {count_updated}건, 신규 추가 {count_added}건.")
+        print("💡 사용자의 즐겨찾기 및 예약 데이터가 안전하게 보존되었습니다.")
         
     except Exception as e:
         print(f"❌ 오류 발생: {e}")
