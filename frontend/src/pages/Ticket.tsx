@@ -35,7 +35,7 @@ export const Ticket = () => {
 
   // 3. 무료 노선 키워드 체크 (프론트엔드 UI용)
   const checkIsFreeRoute = (routeName: string) => {
-    const freeKeywords = ["대구", "하양", "교내", "셔틀", "순환", "등교", "하교"];
+    const freeKeywords = ["대구", "하양", "교내", "셔틀", "순환"];
     return freeKeywords.some(keyword => routeName.includes(keyword));
   };
 
