@@ -17,7 +17,7 @@ from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 from google.auth.transport.requests import Request
 
-# 프로젝트 내부 모듈 (models.py, database.py가 같은 경로에 있어야 함)
+# 프로젝트 내부 모듈
 import models
 from database import engine, get_db
 
@@ -60,7 +60,6 @@ class FavoriteToggleRequest(BaseModel):
     user_id: int
     route_id: int
 
-# 예약 요청 모델 (422 에러 방지를 위해 Optional 설정)
 class ReserveRequest(BaseModel):
     user_id: Optional[int] = None
     route_id: Optional[int] = None
@@ -100,22 +99,20 @@ def send_real_email(receiver_email: str, code: str):
         logger.error(f"❌ Gmail API 발송 에러: {e}")
         return False
 
-# --- [1. 서버 시작 시 실행 로직: DB 자동 동기화 및 노선 복구] ---
+# --- [1. 서버 시작 시 실행 로직] ---
 @app.on_event("startup")
 def startup_event():
     logger.info("🚀 서버 기동 및 DB 데이터 확인 중...")
     try:
-        # 테이블 생성
         models.Base.metadata.create_all(bind=engine)
         
-        # 노선 데이터가 비어있을 경우 기본 데이터 생성
         db = next(get_db())
         if db.query(models.BusRoute).count() == 0:
             logger.info("🚚 노선 데이터가 없어 기본 데이터를 생성합니다.")
             sample_routes = [
                 models.BusRoute(id=1, route_name="하양역 방면", location="정문 승강장", time="08:30", total_seats=45),
-                models.BusRoute(id=2, route_name="반월당 방면", location="공대 앞", time="09:00", total_seats=45),
-                models.BusRoute(id=3, route_name="안심역 방면", location="본관 앞", time="08:45", total_seats=45)
+                models.BusRoute(id=2, route_name="대구 반월당 방면", location="공대 앞", time="09:00", total_seats=45),
+                models.BusRoute(id=3, route_name="구미역 직행", location="본관 앞", time="08:45", total_seats=45)
             ]
             db.add_all(sample_routes)
             db.commit()
@@ -135,7 +132,6 @@ app.add_middleware(
 
 verification_codes = {}
 
-# --- [실시간 버스 위치 (임시 데이터)] ---
 bus_realtime_locations = {
     1: {"lat": 35.9130, "lng": 128.8030, "status": "running", "bus_name": "하양역 방면"},
     2: {"lat": 35.8530, "lng": 128.7330, "status": "running", "bus_name": "반월당 방면"}
@@ -147,7 +143,6 @@ bus_realtime_locations = {
 def read_root():
     return {"status": "running", "message": "DCU Shuttle API Server"}
 
-# (1) 인증번호 발송
 @app.post("/api/auth/send-code")
 def send_verification_code(email: str):
     if not email.endswith("@cu.ac.kr"):
@@ -162,7 +157,6 @@ def send_verification_code(email: str):
     else:
         return {"message": "인증번호 발송 실패(테스트 코드 반환)", "test_code": code, "status": "success"}
 
-# (2) 비밀번호 재설정
 @app.post("/api/auth/reset-password")
 @app.post("/api/api/auth/reset-password")
 def reset_password(request: ResetPasswordRequest, db: Session = Depends(get_db)):
@@ -176,7 +170,6 @@ def reset_password(request: ResetPasswordRequest, db: Session = Depends(get_db))
     db.commit()
     return {"message": "비밀번호가 변경되었습니다.", "status": "success"}
 
-# (3) 회원가입
 @app.post("/api/auth/signup")
 @app.post("/api/api/auth/signup")
 def signup(email: str, password: str, name: str, code: str, db: Session = Depends(get_db)):
@@ -190,7 +183,6 @@ def signup(email: str, password: str, name: str, code: str, db: Session = Depend
     db.commit()
     return {"message": "회원가입 완료", "status": "success"}
 
-# (4) 로그인
 @app.post("/api/auth/login")
 @app.post("/api/api/auth/login")
 def login(email: str, password: str, db: Session = Depends(get_db)):
@@ -204,7 +196,6 @@ def login(email: str, password: str, db: Session = Depends(get_db)):
         "favorites": fav_ids, "status": "success"
     }
 
-# (5) 회원 탈퇴
 @app.post("/api/auth/delete-account")
 @app.post("/api/api/auth/delete-account")
 def delete_account(request: DeleteAccountRequest, db: Session = Depends(get_db)):
@@ -215,12 +206,10 @@ def delete_account(request: DeleteAccountRequest, db: Session = Depends(get_db))
     db.commit()
     return {"message": "회원 탈퇴 완료", "status": "success"}
 
-# (6) 노선 조회
 @app.get("/api/routes")
 def get_all_routes(db: Session = Depends(get_db)):
     return db.query(models.BusRoute).all()
 
-# (7) 버스 위치 추적
 @app.get("/api/bus/track/{bus_id}")
 def get_bus_location(bus_id: int, user_lat: float, user_lng: float):
     bus_info = bus_realtime_locations.get(bus_id)
@@ -228,7 +217,6 @@ def get_bus_location(bus_id: int, user_lat: float, user_lng: float):
         raise HTTPException(status_code=404, detail="Bus not found")
     return {**bus_info, "bus_id": bus_id, "last_update": datetime.datetime.now().isoformat()}
 
-# (8) 내 정보 조회
 @app.get("/api/user/status")
 def get_user_status(user_id: int, db: Session = Depends(get_db)):
     user = db.query(models.User).filter(models.User.id == user_id).first()
@@ -241,7 +229,6 @@ def get_user_status(user_id: int, db: Session = Depends(get_db)):
         "favorites": fav_ids
     }
 
-# (9) 포인트 충전
 @app.post("/api/charge/request")
 def charge_points(request: ChargeRequest, db: Session = Depends(get_db)):
     user = db.query(models.User).filter(models.User.id == request.user_id).first()
@@ -252,7 +239,6 @@ def charge_points(request: ChargeRequest, db: Session = Depends(get_db)):
     db.refresh(user)
     return {"points": user.points, "status": "success"}
 
-# (10) 전화번호 변경
 @app.post("/api/user/update-phone")
 def update_user_phone(request: PhoneUpdateRequest, db: Session = Depends(get_db)):
     user = db.query(models.User).filter(models.User.id == request.user_id).first()
@@ -262,7 +248,6 @@ def update_user_phone(request: PhoneUpdateRequest, db: Session = Depends(get_db)
     db.commit()
     return {"message": "연락처 저장됨", "status": "success", "current_phone": user.phone}
 
-# (11) 즐겨찾기 토글
 @app.post("/api/user/toggle-favorite")
 def toggle_favorite(request: FavoriteToggleRequest, db: Session = Depends(get_db)):
     fav = db.query(models.Favorite).filter(
@@ -277,7 +262,7 @@ def toggle_favorite(request: FavoriteToggleRequest, db: Session = Depends(get_db
     fav_ids = [f.route_id for f in db.query(models.Favorite).filter(models.Favorite.user_id == request.user_id).all()]
     return {"status": "success", "favorites": fav_ids}
 
-# (12) 버스 예약 API
+# --- [🌟 수정: 예약 API (차등 요금 적용)] ---
 @app.post("/api/bookings/reserve")
 def reserve_bus(
     user_id: Optional[int] = Query(None),
@@ -285,31 +270,54 @@ def reserve_bus(
     request: ReserveRequest = Body(None),
     db: Session = Depends(get_db)
 ):
+    # 1. 파라미터 추출
     final_user_id = request.user_id if request and request.user_id else user_id
     final_route_id = request.route_id if request and request.route_id else route_id
 
     if not final_user_id or not final_route_id:
         raise HTTPException(status_code=422, detail="user_id와 route_id가 누락되었습니다.")
 
+    # 2. 유저 및 노선 정보 가져오기
     user = db.query(models.User).filter(models.User.id == final_user_id).first()
+    route = db.query(models.BusRoute).filter(models.BusRoute.id == final_route_id).first()
+
     if not user:
         raise HTTPException(status_code=404, detail="유저를 찾을 수 없습니다.")
+    if not route:
+        raise HTTPException(status_code=404, detail="노선 정보를 찾을 수 없습니다.")
+
+    # 3. 🌟 무료/유료 판별 로직
+    # 무료 키워드 리스트
+    free_keywords = ["대구", "하양", "교내", "셔틀", "순환", "등교", "하교"]
     
-    if user.points < 500:
-        raise HTTPException(status_code=400, detail="포인트가 부족합니다.")
-    
-    user.points -= 500
-    db.add(models.Booking(user_id=final_user_id, route_id=final_route_id, status="reserved"))
+    # 노선 이름에 위 키워드 중 하나라도 포함되어 있으면 무료(0원), 아니면 유료(3000원)
+    is_free = any(keyword in route.route_name for keyword in free_keywords)
+    cost = 0 if is_free else 3000
+
+    # 4. 포인트 확인 및 차감
+    if cost > 0:
+        if user.points < cost:
+            raise HTTPException(status_code=400, detail=f"포인트가 부족합니다. (필요: {cost}P)")
+        user.points -= cost
+
+    # 5. 예약 생성 및 저장
+    new_booking = models.Booking(user_id=final_user_id, route_id=final_route_id, status="reserved")
+    db.add(new_booking)
     db.commit()
     db.refresh(user)
-    return {"status": "success", "message": "예약 완료", "remaining_points": user.points}
 
-# (13) 쪽지 목록 조회
+    return {
+        "status": "success", 
+        "message": "예약 완료", 
+        "is_free": is_free, 
+        "deducted_points": cost,
+        "remaining_points": user.points
+    }
+
 @app.get("/api/messages")
 def get_messages(user_id: int, db: Session = Depends(get_db)):
     return db.query(models.Message).filter(models.Message.receiver_id == user_id).order_by(models.Message.created_at.desc()).all()
 
-# (14) 쪽지 상세 조회
 @app.get("/api/messages/{message_id}")
 def get_message_detail(message_id: int, db: Session = Depends(get_db)):
     msg = db.query(models.Message).filter(models.Message.id == message_id).first()
@@ -318,7 +326,6 @@ def get_message_detail(message_id: int, db: Session = Depends(get_db)):
         db.commit()
     return msg
 
-# (15) 쪽지 보내기
 @app.post("/api/messages/send")
 def send_message(request: MessageCreate, db: Session = Depends(get_db)):
     new_msg = models.Message(
