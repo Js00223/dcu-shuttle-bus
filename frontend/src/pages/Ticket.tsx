@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useNFC } from "../hooks/useNFC";
-import api from "../utils/api"; // ✅ 아까 만든 api 인스턴스 사용
+import api from "../utils/api"; 
 
 interface BusRoute {
   id: number;
@@ -28,22 +28,33 @@ export const Ticket = () => {
   // 페이지 진입 시 자동으로 예매(포인트 차감) 진행
   useEffect(() => {
     const processReservation = async () => {
+      // 🌟 [핵심 수정] 저장된 user_id 가져오기
+      const rawUserId = localStorage.getItem("user_id");
+      
+      if (!rawUserId) {
+        alert("로그인 정보가 없습니다. 다시 로그인해 주세요.");
+        navigate("/login");
+        return;
+      }
+
       try {
         setLoading(true);
 
-        // ✅ 1. 예매 요청 (3,000P 차감 로직은 서버에서 처리됨)
-        // 쿼리 파라미터 방식으로 route_id를 보냅니다.
+        // ✅ 1. 예매 요청 (user_id와 route_id를 모두 보냅니다)
         const response = await api.post("/bookings/reserve", null, {
-          params: { route_id: id }
+          params: { 
+            user_id: parseInt(rawUserId), // 유저 ID 추가
+            route_id: id                  // 노선 ID
+          }
         });
 
         const result = response.data;
 
-        // 서버 응답이 성공(success)인 경우
+        // 서버 응답이 성공인 경우
         if (result.status === "success" || response.status === 200) {
           
-          // ✅ 2. 노선 정보 가져오기 (화면 표시용)
-          const routeRes = await api.get("/api/routes");
+          // ✅ 2. 노선 정보 가져오기 (주소 통일: /routes)
+          const routeRes = await api.get("/routes");
           const routes: BusRoute[] = routeRes.data;
           const currentRoute = routes.find((r) => r.id === Number(id));
 
@@ -62,11 +73,9 @@ export const Ticket = () => {
       } catch (error: any) {
         console.error("예약 오류:", error);
         
-        // 서버에서 보낸 에러 메시지 (포인트 부족 등) 출력
         const errorMsg = error.response?.data?.detail || "예약 시스템에 연결할 수 없습니다.";
         alert(`예약 실패: ${errorMsg}`);
         
-        // 포인트 부족 시 포인트 충전 페이지로 이동, 그 외엔 홈으로
         if (errorMsg.includes("포인트")) {
           navigate("/points");
         } else {
@@ -81,10 +90,16 @@ export const Ticket = () => {
   }, [id, navigate, startScanning]);
 
   const handleCancel = async () => {
+    const rawUserId = localStorage.getItem("user_id");
     if (window.confirm("예약을 취소하시겠습니까? 3,000P가 환불됩니다.")) {
       try {
-        // 실제 서버에 취소 API가 있다면 여기서 호출
-        // await api.post(`/api/bookings/cancel/${id}`);
+        // 취소 시에도 누가 취소하는지 user_id를 함께 보냅니다.
+        await api.post("/bookings/cancel", null, {
+            params: {
+                user_id: rawUserId,
+                route_id: id
+            }
+        });
         alert("취소가 완료되었습니다. 3,000P가 환불되었습니다.");
         navigate("/");
       } catch (err) {
