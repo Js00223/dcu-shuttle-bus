@@ -21,7 +21,7 @@ export const Home = () => {
   // 중복 요청 방지용 Ref
   const isFetching = useRef(false);
 
-  // 즐겨찾기 상태 (초기값은 빈 배열로 시작하고 useEffect에서 서버 데이터를 채웁니다)
+  // 즐겨찾기 상태
   const [favorites, setFavorites] = useState<number[]>([]);
 
   // [기능 1] 노선 데이터 및 사용자 즐겨찾기 불러오기
@@ -41,13 +41,13 @@ export const Home = () => {
         setRoutes(routesResponse.data);
       }
 
-      // 2. 로그인된 유저의 최신 즐겨찾기 상태 가져오기 (DB 연동)
-      const userId = localStorage.getItem("user_id");
-      if (userId) {
+      // 2. 로그인된 유저의 최신 즐겨찾기 상태 가져오기
+      const rawUserId = localStorage.getItem("user_id");
+      if (rawUserId && rawUserId !== "undefined" && rawUserId !== "null") {
+        const userId = parseInt(rawUserId);
         const userStatusResponse = await api.get(`/user/status?user_id=${userId}`);
         if (userStatusResponse.data && userStatusResponse.data.favorites) {
           setFavorites(userStatusResponse.data.favorites);
-          // 로컬 스토리지도 최신화
           localStorage.setItem("bus-favorites", JSON.stringify(userStatusResponse.data.favorites));
         }
       }
@@ -67,28 +67,32 @@ export const Home = () => {
 
   // [기능 2] 즐겨찾기 토글 (서버 DB와 연동)
   const toggleFavorite = async (routeId: number) => {
-    const userId = localStorage.getItem("user_id");
+    // localStorage에서 값을 가져온 뒤 철저히 검사
+    const rawUserId = localStorage.getItem("user_id");
     
-    if (!userId) {
-      alert("로그인이 필요한 기능입니다.");
+    // 유효성 검사: 값이 없거나, 문자열 "null"/"undefined"인 경우 차단
+    if (!rawUserId || rawUserId === "null" || rawUserId === "undefined") {
+      console.error("로그인 세션 없음:", rawUserId);
+      alert("로그인이 필요한 기능입니다. 다시 로그인해주세요.");
+      navigate("/login"); // 로그인 페이지로 유도
       return;
     }
 
+    const userId = parseInt(rawUserId);
+
     try {
-      // 서버 API 호출하여 DB 상태 변경
+      // 서버 API 호출
       const response = await api.post("/user/toggle-favorite", {
-        user_id: parseInt(userId),
+        user_id: userId,
         route_id: routeId
       });
 
-      // 서버에서 반환한 최신 즐겨찾기 목록으로 상태 업데이트
       if (response.data && response.data.favorites) {
         setFavorites(response.data.favorites);
         localStorage.setItem("bus-favorites", JSON.stringify(response.data.favorites));
       }
     } catch (error) {
       console.error("즐겨찾기 업데이트 실패:", error);
-      // 서버 통신 실패 시 사용자에게 알림
       alert("즐겨찾기 반영 중 오류가 발생했습니다.");
     }
   };
