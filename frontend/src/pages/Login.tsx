@@ -10,8 +10,7 @@ export const Login = () => {
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      // [핵심 수정] 서버가 JSON Body가 아닌 쿼리 파라미터를 원하므로 
-      // 데이터를 두 번째 인자(Body)가 아닌 세 번째 인자의 params에 담아 보냅니다.
+      // 서버가 쿼리 파라미터를 원하므로 params에 담아 보냅니다.
       const response = await api.post("/auth/login", null, {
         params: {
           email: email.trim(),
@@ -21,25 +20,40 @@ export const Login = () => {
 
       const userData = response.data;
 
-      // 데이터 저장 (토큰 및 유저 정보)
-      // 서버 응답에 token이 없다면 기본값 처리
-      const tokenValue = userData.token || userData.access_token || "login_success_token";
+      // --- [데이터 저장 로직 수정] ---
+      
+      // 1. Home.tsx에서 사용하는 명시적인 user_id 저장 (가장 중요)
+      if (userData.user_id) {
+        localStorage.setItem("user_id", userData.user_id.toString());
+      }
 
+      // 2. 기존 user 객체 및 토큰 저장
+      const tokenValue = userData.token || userData.access_token || "login_success_token";
       localStorage.setItem("token", tokenValue);
       localStorage.setItem("user", JSON.stringify(userData));
 
+      // 3. 포인트 정보 저장
       if (userData.points !== undefined) {
         localStorage.setItem("points", userData.points.toString());
       }
 
+      // 4. 즐겨찾기 목록 미리 캐싱 (선택 사항이나 권장)
+      if (userData.favorites) {
+        localStorage.setItem("bus-favorites", JSON.stringify(userData.favorites));
+      }
+
       alert(`${userData.name || "사용자"}님, 환영합니다!`);
 
+      // 메인 페이지로 이동
       navigate("/");
+      
+      // 데이터 동기화를 위해 페이지 새로고침
       window.location.reload();
+      
     } catch (err: any) {
       console.error("로그인 에러:", err);
       
-      // 서버에서 보낸 에러 메시지(401 등)가 있으면 보여줌
+      // 서버에서 보낸 에러 메시지 처리
       const errorMessage = err.response?.data?.detail || "로그인 정보가 올바르지 않습니다.";
       alert(errorMessage);
     }
