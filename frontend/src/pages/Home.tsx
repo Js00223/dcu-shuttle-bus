@@ -21,36 +21,39 @@ export const Home = () => {
   // 중복 요청 방지용 Ref
   const isFetching = useRef(false);
 
-  // 즐겨찾기 상태 (로컬 스토리지 연동)
-  const [favorites, setFavorites] = useState<number[]>(() => {
-    const saved = localStorage.getItem("bus-favorites");
-    try {
-      return saved ? JSON.parse(saved) : [];
-    } catch {
-      return [];
-    }
-  });
+  // 즐겨찾기 상태 (초기값은 빈 배열로 시작하고 useEffect에서 서버 데이터를 채웁니다)
+  const [favorites, setFavorites] = useState<number[]>([]);
 
-  // [기능 1] 노선 데이터 불러오기
-  const fetchRoutes = useCallback(async () => {
+  // [기능 1] 노선 데이터 및 사용자 즐겨찾기 불러오기
+  const fetchData = useCallback(async () => {
     if (isFetching.current) return;
 
     try {
       isFetching.current = true;
       setIsLoading(true);
 
-      const response = await api.get("/routes", {
-        params: { t: Date.now() } // 실시간성 확보 및 캐시 방지
+      // 1. 전체 노선 정보 가져오기
+      const routesResponse = await api.get("/routes", {
+        params: { t: Date.now() }
       });
+      
+      if (Array.isArray(routesResponse.data)) {
+        setRoutes(routesResponse.data);
+      }
 
-      if (Array.isArray(response.data)) {
-        setRoutes(response.data);
-      } else {
-        setRoutes([]);
+      // 2. 로그인된 유저의 최신 즐겨찾기 상태 가져오기 (DB 연동)
+      const userId = localStorage.getItem("user_id");
+      if (userId) {
+        const userStatusResponse = await api.get(`/user/status?user_id=${userId}`);
+        if (userStatusResponse.data && userStatusResponse.data.favorites) {
+          setFavorites(userStatusResponse.data.favorites);
+          // 로컬 스토리지도 최신화
+          localStorage.setItem("bus-favorites", JSON.stringify(userStatusResponse.data.favorites));
+        }
       }
     } catch (error: any) {
       if (error.code !== 'ERR_CANCELED') {
-        console.error("노선 불러오기 실패:", error);
+        console.error("데이터 불러오기 실패:", error);
       }
     } finally {
       setIsLoading(false);
@@ -59,25 +62,42 @@ export const Home = () => {
   }, []);
 
   useEffect(() => {
-    fetchRoutes();
-  }, [fetchRoutes]);
+    fetchData();
+  }, [fetchData]);
 
-  // [기능 2] 즐겨찾기 변경 시 로컬 스토리지 저장
-  useEffect(() => {
-    localStorage.setItem("bus-favorites", JSON.stringify(favorites));
-  }, [favorites]);
+  // [기능 2] 즐겨찾기 토글 (서버 DB와 연동)
+  const toggleFavorite = async (routeId: number) => {
+    const userId = localStorage.getItem("user_id");
+    
+    if (!userId) {
+      alert("로그인이 필요한 기능입니다.");
+      return;
+    }
 
-  const toggleFavorite = (id: number) => {
-    setFavorites((prev) =>
-      prev.includes(id) ? prev.filter((favId) => favId !== id) : [...prev, id],
-    );
+    try {
+      // 서버 API 호출하여 DB 상태 변경
+      const response = await api.post("/user/toggle-favorite", {
+        user_id: parseInt(userId),
+        route_id: routeId
+      });
+
+      // 서버에서 반환한 최신 즐겨찾기 목록으로 상태 업데이트
+      if (response.data && response.data.favorites) {
+        setFavorites(response.data.favorites);
+        localStorage.setItem("bus-favorites", JSON.stringify(response.data.favorites));
+      }
+    } catch (error) {
+      console.error("즐겨찾기 업데이트 실패:", error);
+      // 서버 통신 실패 시 사용자에게 알림
+      alert("즐겨찾기 반영 중 오류가 발생했습니다.");
+    }
   };
 
   const handleRouteClick = (routeId: number) => {
     navigate(`/ticket/${routeId}`);
   };
 
-  // 검색 필터링 로직 (routes가 비어있을 경우 대비)
+  // 검색 필터링 로직
   const filteredRoutes = (routes || []).filter(
     (route) =>
       route.route_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
