@@ -3,7 +3,7 @@ import random
 import datetime
 import logging
 import base64
-import re  # 🌟 정규표현식 추가
+import re
 from typing import List, Optional
 from email.mime.text import MIMEText
 
@@ -43,11 +43,10 @@ class ResetPasswordRequest(BaseModel):
     code: str
     new_password: str
 
-# 🌟 수정: 전화번호 변경 시 인증번호(code)를 필수로 받음
 class PhoneUpdateRequest(BaseModel):
     user_id: int
     phone: str
-    code: str 
+    code: str
 
 class MessageCreate(BaseModel):
     sender_id: int
@@ -217,37 +216,47 @@ def charge_points(request: ChargeRequest, db: Session = Depends(get_db)):
     db.refresh(user)
     return {"points": user.points, "status": "success"}
 
-# --- [🌟 수정: 전화번호 변경 API - 본인 인증 및 유효성 검사 강화] ---
 @app.post("/api/user/update-phone")
 def update_user_phone(request: PhoneUpdateRequest, db: Session = Depends(get_db)):
     user = db.query(models.User).filter(models.User.id == request.user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="유저 정보를 찾을 수 없습니다.")
 
-    # 1. 인증번호 검증 (verification_codes 전역 변수 활용)
+    # 1. 인증번호 검증
     stored_code = verification_codes.get(user.email)
     if not stored_code or stored_code != request.code:
         raise HTTPException(status_code=400, detail="인증번호가 유효하지 않거나 일치하지 않습니다.")
 
-    # 2. 전화번호 유효성 검사 (Regex)
-    # 형식: 010-XXXX-XXXX (국번은 2-9로 시작하는 4자리, 끝은 4자리)
+    # 2. 정규표현식: 010-XXXX-XXXX 형식 (중간 번호는 2~9로 시작하는 4자리)
     phone_pattern = re.compile(r"^010-([2-9]\d{3})-(\d{4})$")
     if not phone_pattern.match(request.phone):
-        raise HTTPException(status_code=400, detail="유효한 전화번호 형식이 아닙니다. (010-0000-0000)")
+        raise HTTPException(status_code=400, detail="올바른 휴대전화 번호 형식이 아닙니다.")
 
-    # 3. 비정상 패턴 검사 (연속 숫자 또는 동일 숫자 반복)
+    # 3. 상세 패턴 검증 (나올 수 없는 번호 차단)
     parts = request.phone.split("-")
-    for p in parts[1:]:
-        if p in ["1234", "2345", "3456", "4567", "5678", "6789", "0123"] or p in [str(i)*4 for i in range(10)]:
-             raise HTTPException(status_code=400, detail="사용할 수 없는 번호 패턴입니다.")
+    mid, last = parts[1], parts[2]
+
+    # [검증 A] 동일 숫자 반복 (예: 1111, 2222)
+    if len(set(mid)) == 1 or len(set(last)) == 1:
+        raise HTTPException(status_code=400, detail="동일 숫자가 반복되는 번호는 사용할 수 없습니다.")
+
+    # [검증 B] 연속된 숫자 (예: 1234, 4321, 2345)
+    sequential_patterns = ["0123", "1234", "2345", "3456", "4567", "5678", "6789", 
+                           "9876", "8765", "7654", "6543", "5432", "4321", "3210"]
+    if mid in sequential_patterns or last in sequential_patterns:
+        raise HTTPException(status_code=400, detail="연속된 숫자가 포함된 번호는 사용할 수 없습니다.")
+
+    # [검증 C] 특정 비정상 패턴 (010-1234-1234 등)
+    if mid == last:
+        raise HTTPException(status_code=400, detail="중간 번호와 끝 번호가 동일할 수 없습니다.")
 
     # 4. 저장 및 인증번호 초기화
     user.phone = request.phone
     db.commit()
     if user.email in verification_codes:
-        del verification_codes[user.email] # 재사용 방지
-
-    return {"message": "인증 완료 및 연락처 저장됨", "status": "success", "current_phone": user.phone}
+        del verification_codes[user.email]
+        
+    return {"message": "연락처가 성공적으로 변경되었습니다.", "status": "success", "current_phone": user.phone}
 
 @app.post("/api/user/toggle-favorite")
 def toggle_favorite(request: FavoriteToggleRequest, db: Session = Depends(get_db)):
