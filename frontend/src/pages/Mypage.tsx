@@ -20,7 +20,7 @@ export const MyPage = () => {
 
   const isFetching = useRef(false);
 
-  // [기능 1] 서버로부터 유저 정보 가져오기
+  // [기능 1] 서버로부터 유저 정보 및 즐겨찾기 목록 가져오기
   const fetchUserData = useCallback(async () => {
     if (isFetching.current) return;
     
@@ -64,7 +64,9 @@ export const MyPage = () => {
         }));
       }
     } catch (error: any) {
-      console.error("마이페이지 동기화 실패:", error);
+      if (error.code !== 'ERR_CANCELED') {
+        console.error("마이페이지 동기화 실패:", error);
+      }
     } finally {
       setLoading(false);
       isFetching.current = false;
@@ -75,25 +77,37 @@ export const MyPage = () => {
     fetchUserData();
   }, [fetchUserData]);
 
-  // [전화번호 유효성 검사]
+  // [🌟 유효성 검사 강화] 전화번호 유효성 검사 함수
   const validatePhoneNumber = (num: string) => {
+    // 010-XXXX-XXXX 형식 검사 (중간 번호는 2~9로 시작)
     const regex = /^010-([2-9]\d{3})-(\d{4})$/;
     if (!regex.test(num)) return { valid: false, msg: "010-0000-0000 형식으로 입력해주세요." };
-    
+
     const parts = num.split("-");
     const mid = parts[1];
     const last = parts[2];
-    
-    const isRepeated = (str: string) => /^(\d)\1{3}$/.test(str);
-    const isSequential = (str: string) => "01234567890123456789".includes(str) || "98765432109876543210".includes(str);
 
-    if (isRepeated(mid) || isRepeated(last)) return { valid: false, msg: "유효하지 않은 번호 패턴입니다." };
-    if (isSequential(mid) || isSequential(last)) return { valid: false, msg: "연속된 숫자는 사용할 수 없습니다." };
+    // 1. 동일 숫자 반복 (예: 1111, 2222)
+    const isRepeated = (str: string) => /^(\d)\1{3}$/.test(str);
+    if (isRepeated(mid) || isRepeated(last)) {
+      return { valid: false, msg: "동일한 숫자가 반복되는 번호는 사용할 수 없습니다." };
+    }
+
+    // 2. 연속 숫자 (예: 1234, 4321, 5678)
+    const sequential = "01234567890 98765432109";
+    if (sequential.includes(mid) || sequential.includes(last)) {
+      return { valid: false, msg: "연속된 숫자가 포함된 번호는 사용할 수 없습니다." };
+    }
+
+    // 3. 비정상 패턴 (예: 010-1234-1234)
+    if (mid === last) {
+      return { valid: false, msg: "비정상적인 번호 패턴입니다." };
+    }
 
     return { valid: true, msg: "" };
   };
 
-  // [인증번호 발송]
+  // [🌟 인증번호 발송]
   const handleSendCode = async () => {
     try {
       await api.post("/auth/send-code", null, { params: { email } });
@@ -104,7 +118,7 @@ export const MyPage = () => {
     }
   };
 
-  // [연락처 수정 저장]
+  // [기능 2] 연락처 수정 (본인 인증 포함)
   const handleSavePhone = async () => {
     const validation = validatePhoneNumber(tempPhone);
     if (!validation.valid) {
@@ -121,7 +135,6 @@ export const MyPage = () => {
       const user = JSON.parse(localStorage.getItem("user") || "{}");
       const userId = user.user_id || user.id;
 
-      // 🌟 백엔드 PhoneUpdateRequest 모델 규격에 정확히 맞춤
       await api.post("/user/update-phone", { 
         user_id: Number(userId),
         phone: tempPhone,
@@ -133,11 +146,9 @@ export const MyPage = () => {
       setIsEditing(false);
       setIsCodeSent(false);
       setVerificationCode("");
-      alert("연락처가 성공적으로 변경되었습니다.");
+      alert("연락처가 서버에 저장되었습니다.");
     } catch (error: any) {
-      // 422 에러 등이 발생할 경우 상세 원인 출력
-      console.error("저장 에러 상세:", error.response?.data);
-      alert(error.response?.data?.detail?.[0]?.msg || error.response?.data?.detail || "변경 실패: 인증번호를 확인하세요.");
+      alert(error.response?.data?.detail || "변경 실패: 인증번호를 확인하세요.");
     }
   };
 
@@ -190,7 +201,6 @@ export const MyPage = () => {
             <span className="text-gray-500 font-bold">남은 포인트</span>
             <span className="text-blue-600 font-black text-lg">{(points ?? 0).toLocaleString()} P</span>
           </div>
-          
           <div className="bg-gray-50 rounded-2xl p-4">
             <p className="text-[#8E8E93] text-[10px] font-bold uppercase tracking-widest mb-2">Contact</p>
             {isEditing ? (
@@ -198,9 +208,9 @@ export const MyPage = () => {
                 <div className="flex gap-2">
                   <input 
                     type="text" 
-                    placeholder="010-0000-0000"
                     value={tempPhone} 
                     onChange={(e) => setTempPhone(e.target.value)} 
+                    placeholder="010-0000-0000"
                     className="flex-1 bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none" 
                   />
                   {!isCodeSent ? (
@@ -209,14 +219,13 @@ export const MyPage = () => {
                     <button onClick={handleSendCode} className="bg-gray-200 text-gray-600 px-3 py-2 rounded-lg text-[10px] font-bold whitespace-nowrap">재전송</button>
                   )}
                 </div>
-                
                 {isCodeSent && (
                   <div className="flex gap-2">
                     <input 
                       type="text" 
-                      placeholder="인증번호 6자리"
                       value={verificationCode} 
                       onChange={(e) => setVerificationCode(e.target.value)} 
+                      placeholder="인증번호 6자리"
                       className="flex-1 bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none" 
                     />
                     <button onClick={handleSavePhone} className="bg-blue-600 text-white px-4 py-2 rounded-lg text-xs font-bold whitespace-nowrap">변경확인</button>
