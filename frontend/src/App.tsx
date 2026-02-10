@@ -13,17 +13,17 @@ import { Login } from "./pages/Login";
 import { Signup } from "./pages/Signup";
 import { ForgotPassword } from "./pages/ForgotPassword";
 
-// 기존 서비스 페이지 컴포넌트들 임포트
+// 서비스 페이지 컴포넌트들 임포트
 import { Home } from "./pages/Home";
 import { PointAndPass } from "./pages/PointAndPass";
 import { Ticket } from "./pages/Ticket";
 import { MyPage } from "./pages/Mypage";
 import { NfcScanPage } from "./pages/NfcScanPage";
 
-// ✅ 1. 실시간 ETA 지도 페이지 임포트 (빌드 에러 해결)
+// ✅ 실시간 ETA 지도 페이지 임포트 (Default Import 형식)
 import ShuttleMap from "./pages/ShuttleMap";
 
-// ✅ 쪽지 기능 관련
+// 쪽지 기능 관련
 import { Messages } from "./pages/Messages";
 import { MessageDetail } from "./pages/MessageDetail";
 
@@ -34,7 +34,6 @@ const NavigationWrapper = () => {
   const location = useLocation();
   const isAuthenticated = localStorage.getItem("token");
 
-  // 하단바를 숨길 경로 리스트
   const hideNavPaths = ["/login", "/signup", "/forgot-password"];
   const isHidePath = hideNavPaths.includes(location.pathname);
 
@@ -57,17 +56,14 @@ function App() {
   return (
     <Router>
       <div className="min-h-screen bg-[#F2F2F7]">
-        {/* 하단 내비게이션 바 공간 확보를 위한 padding-bottom */}
         <div className="pb-24">
           <Routes>
-            {/* --- [공개 경로] --- */}
+            {/* 공개 경로 */}
             <Route path="/login" element={<Login />} />
             <Route path="/signup" element={<Signup />} />
             <Route path="/forgot-password" element={<ForgotPassword />} />
 
-            {/* --- [보호된 서비스 경로] --- */}
-
-            {/* 1. 홈 */}
+            {/* 보호된 서비스 경로 */}
             <Route
               path="/"
               element={
@@ -77,8 +73,7 @@ function App() {
               }
             />
 
-            {/* ✅ 2. 실시간 위치 추적 및 ETA 지도 (ShuttleMap 적용) */}
-            {/* 기존의 BusTrackingPage 대신 새로 만든 ShuttleMap을 연결합니다. */}
+            {/* ✅ 실시간 위치 추적 및 ETA 지도 (여기서 ShuttleMap을 사용함) */}
             <Route
               path="/track"
               element={
@@ -88,7 +83,6 @@ function App() {
               }
             />
 
-            {/* 3. 쪽지함 목록 */}
             <Route
               path="/messages"
               element={
@@ -98,7 +92,6 @@ function App() {
               }
             />
 
-            {/* ✅ 4. 쪽지 상세 보기 (로그인 체크 적용) */}
             <Route
               path="/messages/:id"
               element={
@@ -108,7 +101,6 @@ function App() {
               }
             />
 
-            {/* 5. 포인트/학기권 충전 */}
             <Route
               path="/points"
               element={
@@ -118,7 +110,6 @@ function App() {
               }
             />
 
-            {/* 6. 승차권 상세 (NFC/QR/매진알림) */}
             <Route
               path="/ticket/:id"
               element={
@@ -128,7 +119,6 @@ function App() {
               }
             />
 
-            {/* 7. 학생증 NFC 스캔 */}
             <Route
               path="/nfc-scan"
               element={
@@ -138,7 +128,6 @@ function App() {
               }
             />
 
-            {/* 8. 마이페이지 */}
             <Route
               path="/mypage"
               element={
@@ -148,12 +137,10 @@ function App() {
               }
             />
 
-            {/* 잘못된 경로는 홈으로 리다이렉트 */}
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </div>
 
-        {/* 경로 및 인증 상태에 따른 하단바 렌더링 */}
         <NavigationWrapper />
       </div>
     </Router>
