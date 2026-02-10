@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import EtaFloatingBar from '../components/EtaFloatingBar';
 import api from '../utils/api'; 
 
-// 카카오 지도 API를 위한 타입 선언
+// ✅ 전역 타입 선언을 BusTrackingPage와 동일하게 'any'로 통일하여 충돌 방지
 declare global {
   interface Window {
     kakao: any;
@@ -10,10 +10,9 @@ declare global {
 }
 
 const ShuttleMap: React.FC = () => {
-  const [map, setMap] = useState<any>(null);
+  // ✅ TS6133 해결: 사용하지 않는 setMap 제거
   const [etaData, setEtaData] = useState<{ duration_min: number; distance_km: number } | null>(null);
 
-  // 1. 백엔드 API를 통해 실시간 ETA 정보 가져오기
   const updateETA = async (busPos: string, stationPos: string) => {
     try {
       const res = await api.get(`/api/shuttle/precise-eta`, {
@@ -25,19 +24,19 @@ const ShuttleMap: React.FC = () => {
     }
   };
 
-  // 2. 지도 초기화 및 위치 주기적 갱신
   useEffect(() => {
     const container = document.getElementById('map');
-    if (!container || !(window as any).kakao) return;
+    // ✅ window.kakao가 로드되었는지 안전하게 확인
+    if (!container || !window.kakao || !window.kakao.maps) return;
 
     const options = {
-      center: new (window as any).kakao.maps.LatLng(35.858, 128.855),
+      center: new window.kakao.maps.LatLng(35.858, 128.855),
       level: 4
     };
-    const kakaoMap = new (window as any).kakao.maps.Map(container, options);
-    setMap(kakaoMap);
+    
+    // ✅ 지도 객체 생성 (변수에 할당하지 않아도 지도는 그려집니다)
+    new window.kakao.maps.Map(container, options);
 
-    // 좌표 설정 (경도, 위도)
     const busCoord = "128.855,35.858"; 
     const stationCoord = "128.729,35.877"; 
 
@@ -49,7 +48,6 @@ const ShuttleMap: React.FC = () => {
 
   return (
     <div className="relative w-full h-[100dvh] overflow-hidden">
-      {/* 상단 플로팅 ETA 바 */}
       {etaData && (
         <EtaFloatingBar 
           busName="경주 1호차"
@@ -59,10 +57,8 @@ const ShuttleMap: React.FC = () => {
         />
       )}
 
-      {/* 카카오 지도 영역 */}
       <div id="map" className="w-full h-full z-0"></div>
 
-      {/* 컨트롤 버튼 */}
       <div className="absolute right-4 bottom-24 flex flex-col gap-3 z-10">
         <button 
           onClick={() => window.location.reload()}
@@ -78,7 +74,6 @@ const ShuttleMap: React.FC = () => {
         </button>
       </div>
 
-      {/* 하단 정보 카드 */}
       <div className="absolute bottom-6 left-1/2 -translate-x-1/2 w-[90%] bg-white p-4 rounded-2xl shadow-xl z-10 border border-gray-50">
         <div className="flex justify-between items-center">
           <div>
@@ -94,5 +89,4 @@ const ShuttleMap: React.FC = () => {
   );
 };
 
-// ✅ 반드시 default export가 있어야 App.tsx에서 에러가 나지 않습니다.
 export default ShuttleMap;
