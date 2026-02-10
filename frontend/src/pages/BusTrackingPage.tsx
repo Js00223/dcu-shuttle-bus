@@ -1,67 +1,45 @@
 import { useEffect, useRef, useState } from "react";
 
 /**
- * Kakao Maps API 타입 정의
+ * ✅ [수정] 타입 충돌 해결
+ * ShuttleMap.tsx와 동일하게 any로 선언하여 중복 선언 에러(TS2717)를 방지합니다.
  */
-interface KakaoLatLng {
-  getLat: () => number;
-  getLng: () => number;
-}
-
-interface KakaoMarker {
-  setPosition: (latlng: KakaoLatLng) => void;
-  setMap: (map: KakaoMap | null) => void;
-}
-
-interface KakaoMap {
-  setCenter: (latlng: KakaoLatLng) => void;
-  setLevel: (level: number) => void;
-}
-
 declare global {
   interface Window {
-    kakao: {
-      maps: {
-        load: (callback: () => void) => void;
-        LatLng: new (lat: number, lng: number) => KakaoLatLng;
-        Map: new (container: HTMLElement, options: unknown) => KakaoMap;
-        Marker: new (options: unknown) => KakaoMarker;
-      };
-    };
+    kakao: any;
   }
 }
 
-// [핵심] 백엔드 주소 설정 (끝에 슬래시 없이)
+// [핵심] 백엔드 주소 설정
 const BACKEND_URL = "https://dcu-shuttle-bus.onrender.com/api";
 
 export const BusTrackingPage = ({ routeId }: { routeId: number }) => {
   const mapContainer = useRef<HTMLDivElement>(null);
 
-  const [map, setMap] = useState<KakaoMap | null>(null);
-  const [busMarker, setBusMarker] = useState<KakaoMarker | null>(null);
-  const [userMarker, setUserMarker] = useState<KakaoMarker | null>(null);
+  const [map, setMap] = useState<any>(null);
+  const [busMarker, setBusMarker] = useState<any>(null);
+  const [userMarker, setUserMarker] = useState<any>(null);
 
   const [eta, setEta] = useState<number | null>(null);
   const [routeName, setRouteName] = useState("");
 
   // 1. 카카오 맵 초기화
   useEffect(() => {
-    const { kakao } = window;
-    if (!kakao || !mapContainer.current) return;
+    if (!window.kakao || !mapContainer.current) return;
 
-    kakao.maps.load(() => {
+    window.kakao.maps.load(() => {
       if (!mapContainer.current) return;
 
       const options = {
-        center: new kakao.maps.LatLng(35.912, 128.807), // 초기 중심점
+        center: new window.kakao.maps.LatLng(35.912, 128.807), // 초기 중심점
         level: 4,
       };
 
-      const newMap = new kakao.maps.Map(mapContainer.current, options);
+      const newMap = new window.kakao.maps.Map(mapContainer.current, options);
       setMap(newMap);
 
-      const newBusMarker = new kakao.maps.Marker({ map: newMap });
-      const newUserMarker = new kakao.maps.Marker({ map: newMap });
+      const newBusMarker = new window.kakao.maps.Marker({ map: newMap });
+      const newUserMarker = new window.kakao.maps.Marker({ map: newMap });
 
       setBusMarker(newBusMarker);
       setUserMarker(newUserMarker);
@@ -77,13 +55,12 @@ export const BusTrackingPage = ({ routeId }: { routeId: number }) => {
         navigator.geolocation.getCurrentPosition(async (pos) => {
           const lat = pos.coords.latitude;
           const lng = pos.coords.longitude;
-          const { kakao } = window;
 
           // 내 위치 마커 업데이트
-          const userLoc = new kakao.maps.LatLng(lat, lng);
+          const userLoc = new window.kakao.maps.LatLng(lat, lng);
           userMarker.setPosition(userLoc);
 
-          // API 요청 (백틱 기호와 변수 활용)
+          // API 요청
           const res = await fetch(
             `${BACKEND_URL}/bus/track/${routeId}?user_lat=${lat}&user_lng=${lng}`,
             {
@@ -100,9 +77,9 @@ export const BusTrackingPage = ({ routeId }: { routeId: number }) => {
 
           const data = await res.json();
 
-          // [방어 코드] 데이터가 있고, 필요한 좌표 정보가 있는지 확인
+          // 데이터 유효성 검사 후 마커 위치 이동
           if (data && data.status !== "error" && data.bus_location) {
-            const busLoc = new kakao.maps.LatLng(
+            const busLoc = new window.kakao.maps.LatLng(
               data.bus_location.lat,
               data.bus_location.lng,
             );
