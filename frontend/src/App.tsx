@@ -15,13 +15,15 @@ import { ForgotPassword } from "./pages/ForgotPassword";
 
 // 기존 서비스 페이지 컴포넌트들 임포트
 import { Home } from "./pages/Home";
-import { BusTrackingPage } from "./pages/BusTrackingPage";
 import { PointAndPass } from "./pages/PointAndPass";
 import { Ticket } from "./pages/Ticket";
 import { MyPage } from "./pages/Mypage";
 import { NfcScanPage } from "./pages/NfcScanPage";
 
-// ✅ 쪽지 기능 관련 (중복 임포트 제거 및 정리)
+// ✅ 1. 실시간 ETA 지도 페이지 임포트 (빌드 에러 해결)
+import ShuttleMap from "./pages/ShuttleMap";
+
+// ✅ 쪽지 기능 관련
 import { Messages } from "./pages/Messages";
 import { MessageDetail } from "./pages/MessageDetail";
 
@@ -75,12 +77,13 @@ function App() {
               }
             />
 
-            {/* 2. 실시간 위치 추적 */}
+            {/* ✅ 2. 실시간 위치 추적 및 ETA 지도 (ShuttleMap 적용) */}
+            {/* 기존의 BusTrackingPage 대신 새로 만든 ShuttleMap을 연결합니다. */}
             <Route
               path="/track"
               element={
                 <PrivateRoute>
-                  <BusTrackingPage routeId={1} />
+                  <ShuttleMap />
                 </PrivateRoute>
               }
             />
@@ -115,7 +118,7 @@ function App() {
               }
             />
 
-            {/* 6. 승차권 상세 (NFC/QR) */}
+            {/* 6. 승차권 상세 (NFC/QR/매진알림) */}
             <Route
               path="/ticket/:id"
               element={
