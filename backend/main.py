@@ -3,20 +3,18 @@ import random
 import datetime
 import logging
 import base64
-import re
 import math
 import requests
 from typing import List, Optional, Dict
 from email.mime.text import MIMEText
 
-from fastapi import FastAPI, Depends, HTTPException, status, Body, Query, BackgroundTasks
+from fastapi import FastAPI, Depends, HTTPException, status, Body, Query
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
-from sqlalchemy import text
 from pydantic import BaseModel
 import uvicorn
 
-# 프로젝트 내부 모듈 (models.py, database.py 확인 필요)
+# 프로젝트 내부 모듈 (models.py, database.py)
 import models
 from database import engine, get_db
 
@@ -31,12 +29,18 @@ GMAIL_CLIENT_SECRET = os.getenv("GMAIL_CLIENT_SECRET")
 GMAIL_REFRESH_TOKEN = os.getenv("GMAIL_REFRESH_TOKEN")
 KAKAO_REST_API_KEY = os.getenv("KAKAO_REST_API_KEY")
 
-verification_codes: Dict[str, str] = {}
+# --- [Middleware] ---
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
-# --- [Pydantic 모델] ---
-class WaitingRequest(BaseModel):
-    user_id: int
-    route_id: int
+@app.on_event("startup")
+def startup():
+    models.Base.metadata.create_all(bind=engine)
 
 # --- [유틸리티] ---
 def get_haversine_distance(origin_str: str, dest_str: str):
@@ -51,25 +55,12 @@ def get_haversine_distance(origin_str: str, dest_str: str):
         return round(dist, 1), math.ceil((dist/35)*60)+2
     except: return 0.0, 0
 
-# --- [Middleware] ---
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-@app.on_event("startup")
-def startup():
-    models.Base.metadata.create_all(bind=engine)
-
 # --- [API 엔드포인트] ---
 
 @app.get("/")
 def root(): return {"status": "running"}
 
-# ✅ 404 해결: 유저 상태 조회
+# ✅ 유저 상태 조회 (404 방지)
 @app.get("/api/user/status")
 def get_status(user_id: int, db: Session = Depends(get_db)):
     user = db.query(models.User).filter(models.User.id == user_id).first()
@@ -77,6 +68,19 @@ def get_status(user_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="User not found")
     favs = [f.route_id for f in db.query(models.Favorite).filter(models.Favorite.user_id == user.id).all()]
     return {"user_id": user.id, "name": user.name, "points": user.points, "favorites": favs, "status": "success"}
+
+# ✅ 쪽지 목록 조회 (404 해결)
+@app.get("/api/messages")
+def get_messages(user_id: int, db: Session = Depends(get_db)):
+    msgs = db.query(models.Message).filter(models.Message.receiver_id == user_id).all()
+    # Pydantic 모델 변환 대신 딕셔너리 리스트로 반환
+    return [{
+        "id": m.id,
+        "title": m.title,
+        "content": m.content,
+        "sender_id": m.sender_id,
+        "created_at": m.created_at
+    } for m in msgs]
 
 @app.get("/api/shuttle/precise-eta")
 async def get_precise_eta(origin: str, destination: str):
@@ -107,12 +111,6 @@ def get_route_detail(route_id: int, db: Session = Depends(get_db)):
     route = db.query(models.BusRoute).filter(models.BusRoute.id == route_id).first()
     if not route: raise HTTPException(status_code=404)
     return route
-
-@app.post("/api/auth/login")
-def login(email: str = Body(...), password: str = Body(...), db: Session = Depends(get_db)):
-    user = db.query(models.User).filter(models.User.email == email).first()
-    if not user or user.hashed_password != password: raise HTTPException(status_code=401)
-    return {"user_id": user.id, "name": user.name, "points": user.points, "status": "success"}
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)
