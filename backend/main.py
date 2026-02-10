@@ -61,7 +61,7 @@ def get_haversine_distance(origin_str: str, dest_str: str):
 def root(): 
     return {"status": "running", "message": "DCU Shuttle API Server"}
 
-# ✅ 로그인 (422 에러 해결: Query 방식으로 수신)
+# ✅ 로그인 (email, phone 필드 추가 전달)
 @app.post("/api/auth/login")
 def login(
     email: str = Query(...), 
@@ -76,21 +76,32 @@ def login(
     return {
         "user_id": user.id,
         "name": user.name,
+        "email": user.email,
         "points": user.points,
+        "phone": getattr(user, 'phone', "연락처 미등록"),
         "favorites": favs,
         "status": "success"
     }
 
-# ✅ 유저 상태 조회 (404 방지)
+# ✅ 유저 상태 조회 (email, phone 필드 추가 전달)
 @app.get("/api/user/status")
 def get_status(user_id: int, db: Session = Depends(get_db)):
     user = db.query(models.User).filter(models.User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
+    
     favs = [f.route_id for f in db.query(models.Favorite).filter(models.Favorite.user_id == user.id).all()]
-    return {"user_id": user.id, "name": user.name, "points": user.points, "favorites": favs, "status": "success"}
+    return {
+        "user_id": user.id, 
+        "name": user.name, 
+        "email": user.email,
+        "points": user.points, 
+        "phone": getattr(user, 'phone', "연락처 미등록"),
+        "favorites": favs, 
+        "status": "success"
+    }
 
-# ✅ 포인트 충전 기능 (추가됨)
+# ✅ 포인트 충전 기능
 @app.post("/api/user/charge")
 def charge_points(
     user_id: int = Query(...), 
@@ -105,7 +116,7 @@ def charge_points(
     db.commit()
     return {"status": "success", "new_balance": user.points}
 
-# ✅ 쪽지 목록 조회 (404 해결)
+# ✅ 쪽지 목록 조회
 @app.get("/api/messages")
 def get_messages(user_id: int, db: Session = Depends(get_db)):
     msgs = db.query(models.Message).filter(models.Message.receiver_id == user_id).all()
