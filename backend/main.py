@@ -14,14 +14,14 @@ from sqlalchemy.orm import Session
 from pydantic import BaseModel
 import uvicorn
 
-# 프로젝트 내부 모듈 (models.py, database.py가 동일 경로에 있어야 함)
+# 프로젝트 내부 모듈
 import models
 from database import engine, get_db
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# ✅ 데이터 수신을 위한 스키마 정의
+# 데이터 수신을 위한 스키마
 class DeleteAccountRequest(BaseModel):
     user_id: int
 
@@ -87,19 +87,21 @@ def login(
         "status": "success"
     }
 
-# ✅ 비밀번호 변경을 위한 인증번호 발송 (엔드포인트 이름을 send-code로 수정)
+# ✅ 비밀번호 변경을 위한 인증번호 발송
 @app.post("/api/auth/send-code")
 def send_verification_code(
     email: str = Query(...),
     db: Session = Depends(get_db)
 ):
+    # 이메일로 사용자 검색
     user = db.query(models.User).filter(models.User.email == email).first()
+    
+    # 🔍 404 에러의 원인이 '주소 없음'인지 '사용자 없음'인지 구분하기 위해 메시지 구체화
     if not user:
-        raise HTTPException(status_code=404, detail="가입되지 않은 이메일입니다.")
+        raise HTTPException(status_code=404, detail="USER_NOT_FOUND_IN_DB")
     
     # 6자리 랜덤 인증번호 생성
     code = str(random.randint(100000, 999999))
-    
     logger.info(f"Verification code for {email}: {code}")
     
     return {
@@ -136,7 +138,6 @@ def delete_account(
     if not user:
         raise HTTPException(status_code=404, detail="사용자를 찾을 수 없습니다.")
     
-    # 연관 데이터 삭제
     db.query(models.Favorite).filter(models.Favorite.user_id == req.user_id).delete()
     db.query(models.Booking).filter(models.Booking.user_id == req.user_id).delete()
     db.query(models.Message).filter((models.Message.sender_id == req.user_id) | (models.Message.receiver_id == req.user_id)).delete()
