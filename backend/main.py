@@ -21,7 +21,7 @@ from database import engine, get_db
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# ✅ 데이터 수신을 위한 스키마 정의 (추가)
+# ✅ 데이터 수신을 위한 스키마 정의
 class DeleteAccountRequest(BaseModel):
     user_id: int
 
@@ -87,8 +87,8 @@ def login(
         "status": "success"
     }
 
-# ✅ 비밀번호 변경을 위한 인증번호 발송
-@app.post("/api/auth/send-verification")
+# ✅ 비밀번호 변경을 위한 인증번호 발송 (엔드포인트 이름을 send-code로 수정)
+@app.post("/api/auth/send-code")
 def send_verification_code(
     email: str = Query(...),
     db: Session = Depends(get_db)
@@ -97,7 +97,9 @@ def send_verification_code(
     if not user:
         raise HTTPException(status_code=404, detail="가입되지 않은 이메일입니다.")
     
+    # 6자리 랜덤 인증번호 생성
     code = str(random.randint(100000, 999999))
+    
     logger.info(f"Verification code for {email}: {code}")
     
     return {
@@ -124,7 +126,7 @@ def get_status(user_id: int, db: Session = Depends(get_db)):
         "status": "success"
     }
 
-# ✅ 회원 탈퇴 기능 (422 방지를 위해 JSON 스키마 방식으로 전면 수정)
+# ✅ 회원 탈퇴 기능
 @app.post("/api/auth/delete-account")
 def delete_account(
     req: DeleteAccountRequest,
