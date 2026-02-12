@@ -83,6 +83,29 @@ def login(
         "status": "success"
     }
 
+# ✅ 비밀번호 변경을 위한 인증번호 발송 (새로 추가)
+@app.post("/api/auth/send-verification")
+def send_verification_code(
+    email: str = Query(...),
+    db: Session = Depends(get_db)
+):
+    user = db.query(models.User).filter(models.User.email == email).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="가입되지 않은 이메일입니다.")
+    
+    # 6자리 랜덤 인증번호 생성
+    code = str(random.randint(100000, 999999))
+    
+    # 실제 이메일 발송 로직은 GMAIL_REFRESH_TOKEN 등 환경변수가 설정되어 있어야 작동합니다.
+    # 여기서는 프론트엔드 연결을 위해 성공 응답을 반환합니다.
+    logger.info(f"Verification code for {email}: {code}")
+    
+    return {
+        "status": "success",
+        "message": "인증 번호가 발송되었습니다.",
+        "verification_code": code  # 테스트 편의를 위해 코드를 응답에 포함 (실운영시 제거 권장)
+    }
+
 # ✅ 유저 상태 조회 (email, phone 필드 추가 전달)
 @app.get("/api/user/status")
 def get_status(user_id: int, db: Session = Depends(get_db)):
@@ -100,6 +123,24 @@ def get_status(user_id: int, db: Session = Depends(get_db)):
         "favorites": favs, 
         "status": "success"
     }
+
+# ✅ 회원 탈퇴 기능
+@app.post("/api/auth/delete-account")
+def delete_account(
+    user_id: int = Query(...),
+    db: Session = Depends(get_db)
+):
+    user = db.query(models.User).filter(models.User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="사용자를 찾을 수 없습니다.")
+    
+    db.query(models.Favorite).filter(models.Favorite.user_id == user_id).delete()
+    db.query(models.Booking).filter(models.Booking.user_id == user_id).delete()
+    db.query(models.Message).filter((models.Message.sender_id == user_id) | (models.Message.receiver_id == user_id)).delete()
+    
+    db.delete(user)
+    db.commit()
+    return {"status": "success", "message": "계정이 삭제되었습니다."}
 
 # ✅ 포인트 충전 기능
 @app.post("/api/user/charge")
