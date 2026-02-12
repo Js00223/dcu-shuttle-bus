@@ -124,10 +124,10 @@ def get_status(user_id: int, db: Session = Depends(get_db)):
         "status": "success"
     }
 
-# ✅ 회원 탈퇴 기능
+# ✅ 회원 탈퇴 기능 (422 에러 방지를 위해 수정됨)
 @app.post("/api/auth/delete-account")
 def delete_account(
-    user_id: int = Query(...),
+    user_id: int = Body(...), # Query에서 Body로 변경하여 JSON 요청에 대응
     db: Session = Depends(get_db)
 ):
     user = db.query(models.User).filter(models.User.id == user_id).first()
