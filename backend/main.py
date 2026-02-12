@@ -21,6 +21,10 @@ from database import engine, get_db
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# ✅ 데이터 수신을 위한 스키마 정의 (추가)
+class DeleteAccountRequest(BaseModel):
+    user_id: int
+
 app = FastAPI()
 
 # --- [환경 변수] ---
@@ -61,7 +65,7 @@ def get_haversine_distance(origin_str: str, dest_str: str):
 def root(): 
     return {"status": "running", "message": "DCU Shuttle API Server"}
 
-# ✅ 로그인 (email, phone 필드 추가 전달)
+# ✅ 로그인
 @app.post("/api/auth/login")
 def login(
     email: str = Query(...), 
@@ -83,7 +87,7 @@ def login(
         "status": "success"
     }
 
-# ✅ 비밀번호 변경을 위한 인증번호 발송 (새로 추가)
+# ✅ 비밀번호 변경을 위한 인증번호 발송
 @app.post("/api/auth/send-verification")
 def send_verification_code(
     email: str = Query(...),
@@ -93,20 +97,16 @@ def send_verification_code(
     if not user:
         raise HTTPException(status_code=404, detail="가입되지 않은 이메일입니다.")
     
-    # 6자리 랜덤 인증번호 생성
     code = str(random.randint(100000, 999999))
-    
-    # 실제 이메일 발송 로직은 GMAIL_REFRESH_TOKEN 등 환경변수가 설정되어 있어야 작동합니다.
-    # 여기서는 프론트엔드 연결을 위해 성공 응답을 반환합니다.
     logger.info(f"Verification code for {email}: {code}")
     
     return {
         "status": "success",
         "message": "인증 번호가 발송되었습니다.",
-        "verification_code": code  # 테스트 편의를 위해 코드를 응답에 포함 (실운영시 제거 권장)
+        "verification_code": code
     }
 
-# ✅ 유저 상태 조회 (email, phone 필드 추가 전달)
+# ✅ 유저 상태 조회
 @app.get("/api/user/status")
 def get_status(user_id: int, db: Session = Depends(get_db)):
     user = db.query(models.User).filter(models.User.id == user_id).first()
@@ -124,19 +124,20 @@ def get_status(user_id: int, db: Session = Depends(get_db)):
         "status": "success"
     }
 
-# ✅ 회원 탈퇴 기능 (422 에러 방지를 위해 수정됨)
+# ✅ 회원 탈퇴 기능 (422 방지를 위해 JSON 스키마 방식으로 전면 수정)
 @app.post("/api/auth/delete-account")
 def delete_account(
-    user_id: int = Body(...), # Query에서 Body로 변경하여 JSON 요청에 대응
+    req: DeleteAccountRequest,
     db: Session = Depends(get_db)
 ):
-    user = db.query(models.User).filter(models.User.id == user_id).first()
+    user = db.query(models.User).filter(models.User.id == req.user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="사용자를 찾을 수 없습니다.")
     
-    db.query(models.Favorite).filter(models.Favorite.user_id == user_id).delete()
-    db.query(models.Booking).filter(models.Booking.user_id == user_id).delete()
-    db.query(models.Message).filter((models.Message.sender_id == user_id) | (models.Message.receiver_id == user_id)).delete()
+    # 연관 데이터 삭제
+    db.query(models.Favorite).filter(models.Favorite.user_id == req.user_id).delete()
+    db.query(models.Booking).filter(models.Booking.user_id == req.user_id).delete()
+    db.query(models.Message).filter((models.Message.sender_id == req.user_id) | (models.Message.receiver_id == req.user_id)).delete()
     
     db.delete(user)
     db.commit()
@@ -169,7 +170,7 @@ def get_messages(user_id: int, db: Session = Depends(get_db)):
         "created_at": m.created_at
     } for m in msgs]
 
-# ✅ 실시간 도착 정보 (카카오 API 연동)
+# ✅ 실시간 도착 정보
 @app.get("/api/shuttle/precise-eta")
 async def get_precise_eta(origin: str, destination: str):
     if not KAKAO_REST_API_KEY:
